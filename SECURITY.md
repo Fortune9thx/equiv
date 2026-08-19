@@ -156,24 +156,39 @@ was a considered, verified confirmation of the existing design, not a gap.
 
 ## Known, unresolved risks (architectural, not simple bugs — no clean fix exists yet)
 
-### Bradbury finalization can stall network-wide, for extended periods, outside this app's control
+### Bradbury finalization stalls, correlated with nested `gl.deploy_contract()` calls specifically
 
-Observed live 2026-08-19 during manual testing: a real `deploy_claim` call reached `ACCEPTED` with
-unanimous 5/5 validator agreement and `FINISHED_WITH_RETURN` within seconds, but sat at `ACCEPTED`
-with `finalization_timestamp: 0` for **over an hour** with no progress. Investigated via the public
-explorer API (`explorer-bradbury.genlayer.com/api/v1/transactions`) rather than assumption: checked
-the 10 most recent transactions on the *entire* network at the time, from completely unrelated
-senders and contracts — every one of them was also stuck at `accepted`/`committing` with
-`finalization_timestamp: 0`. This is a genuine, confirmed Bradbury-wide finalization backlog, not a
-bug in `ClaimFactory`/`Claim`, not specific to the nested `gl.deploy_contract()` call `deploy_claim`
-makes, and not something any client-side code change can route around — the underlying contract
-state (e.g. a factory-deployed Claim's own code) is genuinely not yet readable by any RPC call until
-the network's finalization pipeline processes it. Frontend transaction UX (0.1.8, above) already
-avoids treating this as a hard failure for the *originating* write, but a freshly-created Claim's
-own detail page can still correctly show "not found" for an extended, unpredictable period while
-this is happening — that is accurate, not a bug, given the contract genuinely isn't finalized yet.
-No mitigation implemented (there is none possible client-side); flagged here as an observed
-operational characteristic of testnet infrastructure this project depends on but does not control.
+Observed live 2026-08-19 during manual testing. A real `deploy_claim` call reached `ACCEPTED` with
+unanimous 5/5 validator agreement and `FINISHED_WITH_RETURN` within seconds, but sat unfinalized
+(`finalization_timestamp: 0`) for hours. Investigated via the public explorer API
+(`explorer-bradbury.genlayer.com/api/v1/transactions`) rather than assumption, in two stages:
+
+1. **First checked general network health.** The 10 most recent transactions on the entire network
+   at the time, from completely unrelated senders and contracts, were also stuck unfinalized —
+   evidence of a genuine, broad Bradbury finalization backlog, not something specific to this
+   project.
+2. **Then checked every transaction ever sent to this project's `ClaimFactory` specifically**
+   (`/api/v1/transactions?address=<factory>`, only 3 total exist). The plain top-level `ClaimFactory`
+   redeploy (no nesting) **finalized normally**. Both, and the *only two*, `deploy_claim` calls ever
+   made — each of which triggers a nested `gl.deploy_contract()` to spawn the child `Claim` — stayed
+   stuck, one for several hours, even as the general network backlog was independently observed to
+   drain forward past their submission time (transactions submitted *after* them, to unrelated
+   contracts, finalized while these did not).
+
+Taken together this is a small sample (n=2) but a real, non-coincidental pattern worth recording
+plainly: nested/triggered contract deployment appears specifically correlated with getting stuck in
+Bradbury's finalization pipeline, on top of whatever general congestion also exists. This is not a
+bug in `ClaimFactory.py`/`Claim.py` (execution was unanimous and correct on all observed attempts)
+and not something any client-side code change can route around — the underlying contract state is
+genuinely not readable by any RPC call until the network's finalization pipeline actually processes
+it. Frontend transaction UX (0.1.8, above) already avoids treating this as a hard failure for the
+*originating* write, but a freshly-created Claim's own detail page can still correctly show "not
+found" for an extended, unpredictable period while this is happening — accurate, not a bug, given
+the contract genuinely isn't finalized yet. No client-side mitigation is possible; flagged here as
+an observed operational characteristic of testnet infrastructure this project depends on but does
+not control, and a candidate to report to the GenLayer team as a possible platform-level gap
+specifically affecting the factory-deploy pattern this project (and the canonical
+`intelligent-oracle` reference) both use.
 
 ### Evidence-source manipulation and prompt injection
 
