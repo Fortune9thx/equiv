@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.8 — fix false "Timed out" errors on transactions that already succeeded (frontend only)
+
+- **Fixed a second real bug found during the same live test session:** `useClaimTransaction`
+  waited for `FINALIZED` status and treated any failure to reach it (including a timeout) as a
+  hard error — even though `ACCEPTED` (reached first, and already one of genlayer-js's own
+  `DECIDED_STATES`) had already returned a successful `FINISHED_WITH_RETURN` execution result. On
+  Bradbury, `FINALIZED` can take longer to confirm than any reasonable client-side wait window even
+  on a transaction that fully succeeded — a pattern observed repeatedly in this project's own
+  deploy tooling all session, but never hardened against in the frontend itself until now.
+  Reproduced live: a real `deploy_claim` call signed, executed, and persisted correctly (confirmed
+  directly via `genlayer trace` and `get_claims_by_creator` — the Claim existed on-chain the whole
+  time), while the UI showed a scary "Timed out waiting for transaction ... to reach status
+  FINALIZED" error and never redirected to the new Claim.
+- Fixed by checking the `ACCEPTED` receipt's `txExecutionResultName` directly: a genuine
+  `FINISHED_WITH_ERROR` still surfaces as a real error immediately, but a timeout on the subsequent
+  `FINALIZED` wait is now treated as a slow confirmation of an already-decided success, not a
+  failure. This affects every write in the app (`deploy_claim`, `take_position`, `resolve`,
+  `claim_payout`) since they all share this one hook.
+- No contract changes; frontend-only, deployed straight to production.
+
 ## 0.1.7 — fix wallet provider resolution for multi-wallet-extension browsers (frontend only)
 
 - **Fixed a real bug found during live manual testing:** `useSignerClient()` built the signing

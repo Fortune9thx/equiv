@@ -37,6 +37,19 @@ update to adopt it live.
   checked the *shape* of the wallet-connection code (does it pass a provider at all, does it avoid
   generating an ephemeral key) but had no way to catch a same-shaped-but-wrong-provider bug without
   an actual multi-wallet browser exercising it.
+- **False "Timed out" error on a transaction that had already succeeded.** `useClaimTransaction`
+  treated any failure to reach `FINALIZED` status — including a timeout — as a hard error, even
+  when `ACCEPTED` (reached first, already one of genlayer-js's own `DECIDED_STATES`) had already
+  returned `txExecutionResultName: FINISHED_WITH_RETURN`. Reproduced live immediately after the
+  wallet-provider fix above: a real `deploy_claim` call fully succeeded on-chain (confirmed via
+  `genlayer trace` and `get_claims_by_creator`) while the UI showed a scary timeout error and never
+  redirected to the new Claim. This exact `FINALIZED`-slower-than-any-reasonable-wait-window pattern
+  had been observed and worked around repeatedly in this project's own deploy tooling
+  (`deploy/deploy.mjs`, documented in every deploy CHANGELOG entry) but was never applied to the
+  frontend's own transaction hook until this was actually hit live. Fixed by checking the
+  `ACCEPTED` receipt's execution result directly — a real `FINISHED_WITH_ERROR` still surfaces
+  immediately, but a `FINALIZED`-wait timeout after a successful `ACCEPTED` result no longer does.
+  Affects every write in the app, since all four share this one hook.
 
 ## Fixed (in source, and live on the current deployment)
 

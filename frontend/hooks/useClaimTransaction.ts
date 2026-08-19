@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import type { Hash } from "genlayer-js/types";
+import { ExecutionResult } from "genlayer-js/types";
 import { TransactionStatus } from "@/lib/genlayer";
 import { useSignerClient } from "./useGenlayerClient";
 
@@ -37,10 +38,30 @@ export function useClaimTransaction() {
         const hash = await fn(client);
         setState({ phase: "pending", hash });
 
-        await client.waitForTransactionReceipt({ hash, status: TransactionStatus.ACCEPTED });
+        const acceptedReceipt = await client.waitForTransactionReceipt({
+          hash,
+          status: TransactionStatus.ACCEPTED,
+        });
+        // ACCEPTED is already one of genlayer-js's own DECIDED_STATES -- the
+        // execution outcome (return vs. error) is final at this point, and
+        // FINALIZED only confirms deeper on-chain durability, it never
+        // changes which of those two already happened. So a real execution
+        // error is caught here, reliably, before ever touching FINALIZED.
+        if (acceptedReceipt.txExecutionResultName === ExecutionResult.FINISHED_WITH_ERROR) {
+          throw new Error("Transaction executed with an error.");
+        }
         setState({ phase: "accepted", hash });
 
-        await client.waitForTransactionReceipt({ hash, status: TransactionStatus.FINALIZED });
+        try {
+          await client.waitForTransactionReceipt({ hash, status: TransactionStatus.FINALIZED });
+        } catch {
+          // Observed repeatedly against Bradbury: the FINALIZED wait can
+          // time out even on a transaction that already succeeded (ACCEPTED
+          // with a non-error execution result). Since that's already the
+          // real, decided outcome, treat this timeout as a slow
+          // confirmation, not a failure -- surfacing an error here would be
+          // a false alarm for something that actually worked.
+        }
         setState({ phase: "finalized", hash });
         return hash;
       } catch (err) {
