@@ -156,6 +156,25 @@ was a considered, verified confirmation of the existing design, not a gap.
 
 ## Known, unresolved risks (architectural, not simple bugs — no clean fix exists yet)
 
+### Bradbury finalization can stall network-wide, for extended periods, outside this app's control
+
+Observed live 2026-08-19 during manual testing: a real `deploy_claim` call reached `ACCEPTED` with
+unanimous 5/5 validator agreement and `FINISHED_WITH_RETURN` within seconds, but sat at `ACCEPTED`
+with `finalization_timestamp: 0` for **over an hour** with no progress. Investigated via the public
+explorer API (`explorer-bradbury.genlayer.com/api/v1/transactions`) rather than assumption: checked
+the 10 most recent transactions on the *entire* network at the time, from completely unrelated
+senders and contracts — every one of them was also stuck at `accepted`/`committing` with
+`finalization_timestamp: 0`. This is a genuine, confirmed Bradbury-wide finalization backlog, not a
+bug in `ClaimFactory`/`Claim`, not specific to the nested `gl.deploy_contract()` call `deploy_claim`
+makes, and not something any client-side code change can route around — the underlying contract
+state (e.g. a factory-deployed Claim's own code) is genuinely not yet readable by any RPC call until
+the network's finalization pipeline processes it. Frontend transaction UX (0.1.8, above) already
+avoids treating this as a hard failure for the *originating* write, but a freshly-created Claim's
+own detail page can still correctly show "not found" for an extended, unpredictable period while
+this is happening — that is accurate, not a bug, given the contract genuinely isn't finalized yet.
+No mitigation implemented (there is none possible client-side); flagged here as an observed
+operational characteristic of testnet infrastructure this project depends on but does not control.
+
 ### Evidence-source manipulation and prompt injection
 
 `resolve()` fetches raw content from each `seed_source` URL and feeds it into the LLM prompt.
