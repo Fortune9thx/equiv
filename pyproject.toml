@@ -1,0 +1,17 @@
+[project]
+name = "equiv"
+version = "0.1.0"
+description = "Equiv: a capital market and resolution layer for language-defined Claims on GenLayer."
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "genlayer-test",
+    "genvm-linter",
+    "pytest",
+    "Pillow",
+]
+
+# pytest config lives in pytest.ini (not duplicated here) so there is one
+# unambiguous source of truth for markers/test discovery.

@@ -1,0 +1,156 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------
+   Equiv design system: clean institutional SaaS light theme.
+   Soft green background, pure white cards, pill buttons, large rounded
+   corners, zero crypto cliche. Dark panels reserved for the sidebar-style
+   split-screen pattern (Connect page) only -- the app itself is light.
+   ------------------------------------------------------------------- */
+
+:root {
+  --background: #E8F9F0;
+  --background-soft: #D4F5E4;
+  --sidebar-dark: #0B2E1F;
+
+  --card: #FFFFFF;
+  --surface: #FFFFFF;
+  --surface-hover: #F4FBF7;
+  --surface-border: rgba(11, 46, 31, 0.08);
+  --surface-border-strong: rgba(11, 46, 31, 0.16);
+
+  --foreground: #0B2E1F;
+  --foreground-muted: #4A6B5A;
+  --foreground-subtle: #7C9488;
+  --foreground-on-dark: #EAF7EF;
+  --foreground-on-dark-muted: rgba(234, 247, 239, 0.65);
+
+  --primary: #00D68F;
+  --primary-hover: #00C280;
+  --primary-soft: rgba(0, 214, 143, 0.12);
+  --primary-foreground: #05231A;
+
+  --success: #00D68F;
+  --success-soft: rgba(0, 214, 143, 0.14);
+  --danger: #E5484D;
+  --danger-soft: rgba(229, 72, 77, 0.1);
+  --warning: #D9A400;
+  --warning-soft: rgba(217, 164, 0, 0.12);
+
+  --radius: 1.25rem;
+  --radius-sm: 0.75rem;
+  --radius-lg: 1.5rem;
+  --radius-xl: 2rem;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  --shadow-soft: 0 1px 2px rgba(11, 46, 31, 0.04), 0 8px 24px -12px rgba(11, 46, 31, 0.12);
+  --shadow-card: 0 2px 8px rgba(11, 46, 31, 0.05), 0 16px 40px -16px rgba(11, 46, 31, 0.14);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-background-soft: var(--background-soft);
+  --color-sidebar-dark: var(--sidebar-dark);
+
+  --color-card: var(--card);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--surface-border);
+  --color-border-strong: var(--surface-border-strong);
+
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-subtle: var(--foreground-subtle);
+  --color-foreground-on-dark: var(--foreground-on-dark);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+
+  --radius-DEFAULT: var(--radius);
+  --radius-sm: var(--radius-sm);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+* {
+  border-color: var(--surface-border);
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(0, 214, 143, 0.28);
+  color: var(--foreground);
+}
+
+/* Pure white elevated card, soft shadow, large radius -- the base surface
+   for every panel in the app (Expensify-style card language). */
+.card-surface {
+  background: var(--card);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.card-hover {
+  transition: box-shadow 180ms ease, transform 180ms ease, border-color 180ms ease;
+}
+.card-hover:hover {
+  box-shadow: var(--shadow-soft), 0 0 0 1px rgba(0, 214, 143, 0.15);
+  transform: translateY(-1px);
+}
+
+.font-mono-tight {
+  font-family: var(--font-mono);
+  letter-spacing: -0.01em;
+}
+
+/* Subtle active-state ring for the Resolution Theater while a transaction
+   is in flight -- a simple pulsing green ring, not a gimmicky gradient
+   border, matching the "clean modern SaaS" brief. */
+@keyframes pulse-ring {
+  0%, 100% { box-shadow: 0 0 0 1px var(--primary), var(--shadow-card); }
+  50% { box-shadow: 0 0 0 3px rgba(0, 214, 143, 0.35), var(--shadow-card); }
+}
+.pulse-ring {
+  animation: pulse-ring 2.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse-ring { animation: none; box-shadow: 0 0 0 1px var(--primary), var(--shadow-card); }
+}
+
+/* Soft full-bleed green background used behind hero/auth panels */
+.bg-soft-green {
+  background: linear-gradient(160deg, var(--background-soft) 0%, var(--background) 100%);
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--surface-border-strong);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--foreground-subtle); }
