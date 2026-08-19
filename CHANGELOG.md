@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.4 — redeployed ClaimFactory (all 0.1.2/0.1.3 fixes now live)
+
+- Deployed a fresh `ClaimFactory` to GenLayer Bradbury Testnet at
+  `0x306Cf15AB31ceD28f65d28d43179FB3aE349ABaE`, embedding the current, fixed `contracts/Claim.py`
+  source — this is what 0.1.2 and 0.1.3 built in source but explicitly deferred. The prior address
+  `0xC62245f05Abcf2f763E298641Ff2D97ED8865F30` ran pre-fix source and is now superseded.
+- Confirmed readable post-deploy via `deploy/verify-deploy.mjs` (`get_claims_count()` returns 0).
+- Same `FINALIZED`-wait timeout pattern as the first deployment recurred and was resolved the same
+  way: `client.getTransaction({hash})` directly confirmed `statusName: ACCEPTED` and
+  `txExecutionResultName: FINISHED_WITH_RETURN` (real success) even though the client-side wait for
+  `FINALIZED` timed out.
+- Updated `frontend/.env.local` and both Vercel `production`/`preview` environments'
+  `NEXT_PUBLIC_CLAIM_FACTORY_ADDRESS` to the new address, and redeployed the frontend so the
+  build-time-baked env var takes effect.
+- Updated `README.md`'s "Deployed contracts" section and `SECURITY.md`'s deployment status note to
+  reflect that all fixes through 0.1.3 are now live on-chain, not just in source.
+
 ## 0.1.3 — address checksum case-sensitivity fix (checked against real GenLayer rejection feedback)
 
 - Fixed a real, high-severity bug: `positions` and `claim_meta` were keyed by `Address.as_hex`

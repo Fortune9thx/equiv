@@ -127,8 +127,11 @@ npm run dev
 
 Live on GenLayer Bradbury Testnet:
 
-- `ClaimFactory`: [`0xC62245f05Abcf2f763E298641Ff2D97ED8865F30`](https://explorer-bradbury.genlayer.com/address/0xC62245f05Abcf2f763E298641Ff2D97ED8865F30)
+- `ClaimFactory`: [`0x306Cf15AB31ceD28f65d28d43179FB3aE349ABaE`](https://explorer-bradbury.genlayer.com/address/0x306Cf15AB31ceD28f65d28d43179FB3aE349ABaE)
   (creation stake: 1 GEN, `Claim.py` source embedded per `deploy/deploy.mjs`)
+
+  Redeployed 2026-08-19 to carry the 0.1.3 address-checksum fix onto the live contract (the prior
+  address `0xC62245f05Abcf2f763E298641Ff2D97ED8865F30` ran pre-fix source and is superseded).
 
 ## License
 

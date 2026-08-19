@@ -8,14 +8,16 @@ deployment holding real funds.
 
 ## Deployment status note
 
-`ClaimFactory` is live on Bradbury at `0xC62245f05Abcf2f763E298641Ff2D97ED8865F30`, deployed with
-the `contracts/Claim.py` source **as it existed at deploy time**. Contract fixes made after that
-deploy (see "Fixed" below) exist in this repo's source but are **not applied to the live
-contract** — Claim contracts are not upgradeable, and every Claim it spawns still runs the
-original embedded source. Applying a contract-level fix to production requires deploying a new
-`ClaimFactory` (a new address) and migrating.
+`ClaimFactory` is live on Bradbury at `0x306Cf15AB31ceD28f65d28d43179FB3aE349ABaE`, redeployed
+2026-08-19 specifically to carry the address-checksum fix (below) onto the live contract. This is
+the second deployment: the original address `0xC62245f05Abcf2f763E298641Ff2D97ED8865F30` ran
+pre-fix source and is now superseded (still reachable on-chain, but not the one the frontend
+points at). As before, Claim contracts are not upgradeable — every Claim spawned by a given
+`ClaimFactory` runs whatever `Claim.py` source was embedded at that factory's deploy time. Any
+future contract-level fix again requires a fresh `ClaimFactory` deployment and a frontend env
+update to adopt it live.
 
-## Fixed (in source; not yet on the live deployment)
+## Fixed (in source, and live on the current deployment)
 
 - **Address checksum case-sensitivity broke every address-keyed lookup.** `positions` (in `Claim`)
   and `claim_meta` (in `ClaimFactory`) were keyed by `Address.as_hex` — an EIP-55-style checksum,
