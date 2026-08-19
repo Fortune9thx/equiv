@@ -17,6 +17,21 @@ original embedded source. Applying a contract-level fix to production requires d
 
 ## Fixed (in source; not yet on the live deployment)
 
+- **Address checksum case-sensitivity broke every address-keyed lookup.** `positions` (in `Claim`)
+  and `claim_meta` (in `ClaimFactory`) were keyed by `Address.as_hex` — an EIP-55-style checksum,
+  mixed case — but every public view method taking an address string (`get_position`,
+  `get_claim_meta`, `get_claims_by_creator`, `get_children`) compared it directly against raw
+  caller input with no normalization. Any caller passing a differently-cased but equally valid
+  address — which is what most Web3 libraries do by default, and what a raw `genlayer-js` call
+  with no special-casing does too — got a **silent** "not found" result instead of their real
+  position or record: no error, just wrong data. This is a confirmed real-world GenLayer rejection
+  pattern (seen verbatim in review feedback on a prior project — "unknown charity" execution
+  errors from the identical root cause), not a hypothetical. Fixed with a `_normalize_address()`
+  helper applied consistently on every write (as the TreeMap key) and every read (before lookup or
+  comparison) in both contracts; display-facing fields keep their original checksummed form.
+  Covered by `tests/direct/test_position.py::test_get_position_is_case_insensitive_to_lookup_address`,
+  which explicitly writes a position under a checksummed address and confirms it's still found via
+  lowercase and mixed-case lookups.
 - **`key_evidence` JSON corruption on long LLM output.** The original code serialized
   `key_evidence` to JSON and then truncated the *string* to 4000 characters. If the cut landed
   mid-token, `self.key_evidence` became invalid JSON, and `get_claim()` — a public view method —
@@ -124,6 +139,39 @@ contract client-side, for UX. It is not itself a security control: per "Agent-na
 any agent can call `deploy_claim`/`Claim.__init__` directly via `genlayer-js`, bypassing the
 frontend entirely — which is exactly why the contract-level checks above (not just the frontend's)
 matter.
+
+## Checked against real GenLayer review feedback
+
+The address-checksum bug above (and its fix) were found by directly checking this codebase
+against real rejection reasons from GenLayer review feedback on prior projects, not generic
+security thinking. Two more patterns from that same feedback were checked and are confirmed
+**not present** here, with the evidence, not just an assertion:
+
+- **Write client not binding the injected wallet provider.** A prior project's `writeClient` never
+  passed `window.ethereum` to `createClient`, so MetaMask could never be prompted to sign.
+  `lib/genlayer.ts`'s `getGenlayerClient()` does pass `provider: window.ethereum` — verified by
+  reading the current file, not assumed from having written it.
+- **Read client silently generating a random ephemeral wallet on every view call.** The same
+  feedback described a `readClient` that called `createAccount()` with no arguments internally,
+  generating a random private key and prompting repeated MetaMask Snap permission requests.
+  Checked directly against genlayer-js's own installed source
+  (`node_modules/genlayer-js/dist/index.js`): `createClient()` only ever sets an `account` on the
+  underlying client via `...config.account ? { account: config.account } : {}` — when `account` is
+  omitted, as `getReadOnlyClient()` does, nothing is generated, no key, no signing capability, at
+  all. `createAccount(key)` (which does generate a random key when called with no argument) is
+  only ever called in `deploy/deploy.mjs`, a server-side script, never from the browser app. This
+  matches everything observed live in this session too: read pages worked correctly with no wallet
+  connected and no unexpected prompts, on both localhost and the deployed Vercel site.
+- **Nested nondeterministic blocks failing contract lint.** A different piece of feedback rejected
+  a contract whose "fetch-and-score" path nested one nondet-block-creating call inside another.
+  `Claim.resolve()` calls `gl.vm.run_nondet_unsafe(leader_fn, validator_fn)` exactly once;
+  `validator_fn` calls `leader_fn()` again to independently reproduce the leader's work, but
+  `leader_fn`'s own body only calls individual nondet *primitives* (`gl.nondet.web.render`,
+  `gl.nondet.exec_prompt`), never a second `run_nondet_unsafe`/`prompt_comparative` wrapper. All
+  three `genvm-lint` subcommands (`lint`, `validate`, `typecheck`), not just the combined `check`,
+  pass clean on this file. That said: lint passing is not the same as this exact pattern having
+  been exercised against real GenVM execution — see PLAT-01 in the platform review — so this is
+  reported as "structurally distinct and lint-clean," not "proven safe under real consensus."
 
 ## Other, non-architectural findings
 

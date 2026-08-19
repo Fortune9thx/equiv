@@ -18,6 +18,21 @@ def _consensus_now() -> int:
     return int(datetime.fromisoformat(str(raw).replace("Z", "+00:00")).timestamp())
 
 
+def _normalize_address(addr: str) -> str:
+    """TreeMap keys and equality comparisons against caller-supplied address
+    strings use this everywhere -- Address.as_hex is an EIP-55-style
+    checksum (mixed case), and a caller has no reason to reproduce that
+    exact casing (a raw genlayer-js call, a non-checksummed frontend, or
+    any Web3 library defaulting to lowercase all produce a technically-
+    correct but differently-cased address). Comparing a checksummed stored
+    key against raw caller input is a real, confirmed GenLayer rejection
+    pattern -- see Claim.py's copy of this helper for the full note.
+    Display-facing fields (the "address"/"creator" values actually
+    returned to callers) keep their original checksummed form; only the
+    TreeMap key and comparison logic are normalized."""
+    return addr.strip().lower()
+
+
 class ClaimFactory(gl.Contract):
     """
     Registry + on-chain factory for Equiv Claims.
@@ -98,7 +113,7 @@ class ClaimFactory(gl.Contract):
             "created_at": str(_consensus_now()),
             "stake": str(int(gl.message.value)),
         }
-        self.claim_meta[address_hex] = json.dumps(meta)
+        self.claim_meta[_normalize_address(address_hex)] = json.dumps(meta)
         return address_hex
 
     @gl.public.view
@@ -118,7 +133,7 @@ class ClaimFactory(gl.Contract):
 
     @gl.public.view
     def get_claim_meta(self, address: str) -> dict:
-        raw = self.claim_meta.get(address, "")
+        raw = self.claim_meta.get(_normalize_address(address), "")
         if not raw:
             raise gl.vm.UserError("Unknown claim address.")
         return json.loads(raw)
@@ -127,7 +142,7 @@ class ClaimFactory(gl.Contract):
     def get_claims_by_tag(self, tag: str) -> list[str]:
         matches = []
         for address_hex in self.claim_addresses:
-            raw = self.claim_meta.get(address_hex, "")
+            raw = self.claim_meta.get(_normalize_address(address_hex), "")
             if not raw:
                 continue
             meta = json.loads(raw)
@@ -138,23 +153,26 @@ class ClaimFactory(gl.Contract):
     @gl.public.view
     def get_claims_by_creator(self, creator_address: str) -> list[str]:
         matches = []
+        target = _normalize_address(creator_address)
         for address_hex in self.claim_addresses:
-            raw = self.claim_meta.get(address_hex, "")
+            raw = self.claim_meta.get(_normalize_address(address_hex), "")
             if not raw:
                 continue
             meta = json.loads(raw)
-            if meta.get("creator") == creator_address:
+            if _normalize_address(meta.get("creator", "")) == target:
                 matches.append(address_hex)
         return matches
 
     @gl.public.view
     def get_children(self, parent_address: str) -> list[str]:
+        target = _normalize_address(parent_address)
         children = []
         for address_hex in self.claim_addresses:
-            raw = self.claim_meta.get(address_hex, "")
+            raw = self.claim_meta.get(_normalize_address(address_hex), "")
             if not raw:
                 continue
             meta = json.loads(raw)
-            if parent_address in meta.get("parent_claims", []):
+            parents = [_normalize_address(p) for p in meta.get("parent_claims", [])]
+            if target in parents:
                 children.append(address_hex)
         return children

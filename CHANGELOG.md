@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.3 — address checksum case-sensitivity fix (checked against real GenLayer rejection feedback)
+
+- Fixed a real, high-severity bug: `positions` and `claim_meta` were keyed by `Address.as_hex`
+  (EIP-55 checksum, mixed case) but every public view method compared that key against raw,
+  unnormalized caller input — any caller using a differently-cased (but equally valid) address got
+  a **silent** "not found" instead of their real data. Confirmed against real GenLayer review
+  feedback describing the identical root cause on a prior project. Fixed with a
+  `_normalize_address()` helper applied consistently on every write and read in both contracts.
+  New regression test proves a position written under a checksummed address is found via lowercase
+  and mixed-case lookups.
+- Checked two more patterns from that same review feedback and confirmed, with direct evidence
+  (not assumption), that neither applies here: the write client already binds
+  `window.ethereum`, and the read client never generates a random ephemeral account (verified by
+  reading `genlayer-js`'s own source). See `SECURITY.md`'s new "Checked against real GenLayer
+  review feedback" section for the full detail, including a residual, honestly-reported open
+  question about nested nondeterministic blocks that lint can't fully settle.
+- Confirmed the live `ClaimFactory` deploy transaction has since reached true `FINALIZED` status
+  (not just `ACCEPTED`), addressed directly rather than left as an inferred success.
+- 33/33 direct-mode tests passing.
+- **Not yet done:** as with 0.1.2, this fix requires a fresh `ClaimFactory` deployment to reach the
+  live contract.
+
 ## 0.1.2 — security audit fixes (source only; not yet redeployed)
 
 - Fixed a real bug where long `key_evidence` could produce invalid JSON via mid-token string

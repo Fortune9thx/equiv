@@ -98,6 +98,36 @@ def test_take_position_rejects_switching_outcome():
             claim.take_position("NO")
 
 
+def test_get_position_is_case_insensitive_to_lookup_address():
+    """Regression test for a real, confirmed GenLayer rejection pattern on a
+    prior project: storage keyed by Address.as_hex (an EIP-55 checksum,
+    mixed case) but looked up with raw, unnormalized caller input caused
+    silent "not found" results whenever a caller passed a differently-cased
+    but equally-valid address -- exactly what most Web3 libraries do by
+    default (lowercase), and exactly what a raw genlayer-js call with no
+    special-casing would do too. Confirm a position written under the
+    contract's own checksummed sender address is still found when looked
+    up with an all-lowercase and an all-uppercase-hex-digits variant of the
+    same address."""
+    vm = VMContext()
+    creator, alice = create_test_addresses(2)
+    with vm.activate():
+        vm.sender = creator
+        claim = _deploy_open_claim(vm, creator)
+        vm.sender = alice
+        vm.value = 42
+        claim.take_position("YES")
+
+        checksummed = to_hex(alice)
+        lowercase = checksummed.lower()
+        uppercase_digits = "0x" + checksummed[2:].upper()
+
+        for lookup in (checksummed, lowercase, uppercase_digits):
+            pos = claim.get_position(lookup)
+            assert pos["outcome"] == "YES", f"lookup with {lookup!r} failed to find the position"
+            assert pos["amount"] == "42"
+
+
 def test_take_position_closed_after_end_time():
     vm = VMContext()
     creator, alice = create_test_addresses(2)

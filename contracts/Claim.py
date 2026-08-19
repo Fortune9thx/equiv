@@ -91,6 +91,22 @@ def _bounded_evidence_json(items: list, max_len: int) -> str:
     return encoded
 
 
+def _normalize_address(addr: str) -> str:
+    """Every TreeMap in this contract keyed by an address string uses this
+    as the ONLY key format, and every public view method that accepts an
+    address string as a lookup parameter normalizes through this before
+    comparing. Address.as_hex is an EIP-55-style checksum (mixed case) --
+    a caller (a raw genlayer-js call, a non-checksummed frontend, a
+    different Web3 library's default lowercase output) has no reason to
+    reproduce that exact casing. Comparing checksummed-stored-key against
+    raw-caller-input directly is a real, confirmed GenLayer rejection
+    pattern (silent "not found" on a real position/record, not even a
+    loud error) -- normalizing to lowercase on both the write and the
+    read side closes it without needing to reimplement the checksum
+    algorithm here."""
+    return addr.strip().lower()
+
+
 def _consensus_now() -> int:
     """Unix timestamp derived from the transaction's own message context
     (gl.message_raw["datetime"], an ISO-8601 string identical for every
@@ -224,7 +240,7 @@ class Claim(gl.Contract):
         if _consensus_now() >= int(self.end_time):
             raise gl.vm.UserError("Claim has passed its end_time; positions are closed.")
 
-        sender_hex = gl.message.sender_address.as_hex
+        sender_hex = _normalize_address(gl.message.sender_address.as_hex)
         amount = int(gl.message.value)
 
         existing_raw = self.positions.get(sender_hex, "")
@@ -245,7 +261,7 @@ class Claim(gl.Contract):
 
     @gl.public.view
     def get_position(self, holder_address: str) -> dict:
-        raw = self.positions.get(holder_address, "")
+        raw = self.positions.get(_normalize_address(holder_address), "")
         if not raw:
             return {"outcome": "", "amount": "0", "claimed": False, "payout": "0"}
         return json.loads(raw)
@@ -415,7 +431,7 @@ shape:
         if self.status not in (STATUS_RESOLVED, STATUS_INCONCLUSIVE):
             raise gl.vm.UserError("Claim is not yet resolved.")
 
-        sender_hex = gl.message.sender_address.as_hex
+        sender_hex = _normalize_address(gl.message.sender_address.as_hex)
         raw = self.positions.get(sender_hex, "")
         if not raw:
             raise gl.vm.UserError("No position found for caller.")
