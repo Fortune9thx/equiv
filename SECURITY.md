@@ -17,6 +17,12 @@ points at). As before, Claim contracts are not upgradeable — every Claim spawn
 future contract-level fix again requires a fresh `ClaimFactory` deployment and a frontend env
 update to adopt it live.
 
+**A third round of fixes (confidence clamping, tag length bound, `get_owner()`) landed in source
+after this second deployment and are not yet on the live contract** — see "Fixed in source; not
+yet redeployed" below. None of the three are exploitable-today gaps (see each entry for why); they
+were bundled for the next deployment rather than triggering an immediate third redeploy on their
+own.
+
 ## Fixed (in source, and live on the current deployment)
 
 - **Address checksum case-sensitivity broke every address-keyed lookup.** `positions` (in `Claim`)
@@ -56,6 +62,72 @@ update to adopt it live.
   See "Known risk: evidence-source prompt injection" below — the prompt now explicitly frames
   that content as untrusted data and instructs the model not to follow directives found within it.
   This raises the bar; it does not eliminate the risk (see below).
+
+## Fixed in source; not yet redeployed
+
+- **Unclamped LLM confidence could be stored out of [0.0, 1.0].** The prompt asks for a confidence
+  between "0.0" and "1.0", but nothing enforced that range before storage — a hallucinating or
+  adversarial leader returning "1.7" or "-3.0" would pass the validator's fixed-width tolerance
+  check just as easily as an in-range value (both leader and validator independently re-run the
+  same prompt; if both drift outside range together, they still agree with each other), and get
+  permanently stored as a nonsensical confidence. `_stringify_confidence` now clamps to
+  `[0.0, 1.0]` before it can ever be returned from `leader_fn` or persisted, closing this for both
+  the validator comparison and the final stored value in one place. Covered by
+  `tests/direct/test_resolve.py::test_resolve_clamps_out_of_range_confidence`. Not a consensus-
+  safety gap (validators still had to agree with each other to reach any stored value) — a data-
+  integrity gap, since downstream consumers (the frontend, the Agent SDK) can reasonably assume
+  confidence is always in range.
+- **Unbounded tag length in `ClaimFactory.deploy_claim`.** `MAX_TAGS` capped the *count* of tags but
+  not each tag's length — a caller could pass an arbitrarily long string as a single tag, bloating
+  `claim_meta` storage with no benefit. Added `MAX_TAG_LEN = 40`, enforced alongside the existing
+  count check.
+- **`ClaimFactory.owner` was stored but unreachable.** Set in `__init__`, never exposed, never
+  checked anywhere. Not a vulnerability on its own (dead state, not a backdoor), but worth
+  resolving one way or the other rather than leaving unexplained stored-but-unused state for a
+  reviewer to wonder about. Added `get_owner()` — a read-only, purely informational provenance
+  getter, documented explicitly as gating nothing (see "Trust model" below for why nothing here is
+  owner-gated by design).
+
+## Trust model and access control
+
+Equiv has **no owner-gated write anywhere in either contract**, and this is a deliberate design
+choice, not an oversight: it is a permissionless capital market, and an admin who could pause it,
+change its fee, or block a Claim would itself be a centralization/rug risk in a system whose entire
+value proposition is trustless resolution. Access control here is economic (creation fee, staking)
+and per-item (a position belongs to whoever holds it), not role-based:
+
+| Method | Contract | Who can call it | What actually gates it |
+| --- | --- | --- | --- |
+| `deploy_claim` | ClaimFactory | Anyone | Must send ≥ `creation_fee`; input validation |
+| `take_position` | Claim | Anyone | Claim must be `Open`, before `end_time`, value > 0 |
+| `resolve` | Claim | Anyone | Claim must be `Open` and past `end_time` (no privileged resolver — this is intentional, see "Known, unresolved risks") |
+| `claim_payout` | Claim | Anyone | Only pays out `gl.message.sender_address`'s **own** position (`self.positions[normalize(sender)]`); no position → `UserError`; already claimed → `UserError` |
+| every `@gl.public.view` | both | Anyone | Read-only; no state change possible |
+
+`ClaimFactory.owner` (see "Fixed" above) is stored and exposed via `get_owner()` purely for
+provenance display — it authorizes nothing. `claim_payout` is the closest analogue to a
+per-item ownership check (a vault/loan's own "owner" field, in more admin-style contract designs):
+it already restricts every payout to the caller's own stored position, verified live in
+`tests/integration/test_full_lifecycle.py::test_unauthorized_wallet_cannot_claim_a_position_it_never_took`,
+which has a second, funded wallet that never staked on a resolved Claim attempt `claim_payout` and
+confirms it gets a real on-chain error, not a silent success. Cross-contract writes
+(`trusted_callers`-style allowlisting) do not apply here: Equiv never calls another contract's
+*write* method at all — precedent citation is pull-based, read-only `.view()` calls only (see
+[[genlayer-crosscontract-write-broken]] for why writes are avoided, not just under-tested).
+
+**Consensus pattern, verified against canonical GenLayer guidance, not assumed:** `resolve()` uses
+a custom `gl.vm.run_nondet_unsafe(leader_fn, validator_fn)` pair — independent re-execution,
+exact-match on `outcome`, numeric tolerance on `confidence` — rather than the `prompt_comparative`/
+`prompt_non_comparative` convenience wrappers. Checked directly against
+`genlayer-docs/pages/developers/intelligent-contracts/equivalence-principle.mdx` and
+`genlayer-project-boilerplate/CLAUDE.md`: both state a custom leader/validator via
+`run_nondet_unsafe` is the pattern "recommended for most cases," and the equivalence-principle doc
+explicitly warns that for "classification, scoring, extraction, authenticity, safety, ranking, and
+settlement decisions" (`resolve()` is a settlement decision) non-comparative validation should be
+avoided "unless you can clearly explain how the validator independently verifies the decision from
+source data" — which is precisely what Equiv's validator already does (it re-runs `leader_fn()` and
+compares the decision fields, never trusting the leader's output alone). No change made here; this
+was a considered, verified confirmation of the existing design, not a gap.
 
 ## Known, unresolved risks (architectural, not simple bugs — no clean fix exists yet)
 
@@ -122,10 +194,31 @@ internal/private targets at the platform level.
 
 ### `claim_payout`'s live transfer path
 
-`_Recipient(...).emit_transfer(...)` uses a pattern verified in a prior project, but has not been
-independently re-verified with a live end-to-end payout test in *this* project. Before trusting
-`claim_payout` with meaningful real value, run a small-stake live test on Bradbury and confirm the
-recipient's balance actually increases by the expected amount.
+`_Recipient(Address(...)).emit_transfer(value=...)` is checked directly against GenLayer's own
+canonical documentation (`developers/intelligent-contracts/features/value-transfers.mdx`, "Sending
+Value to an EOA or EVM Contract") — the exact shape used here (empty `@gl.evm.contract_interface`
+class, `emit_transfer(value=u256(...))`, no `on=` kwarg) matches that page's own `Faucet` example
+verbatim, including calling it on `gl.message.sender_address` (already an `Address`, no
+`Address(...)` wrapping needed) rather than a string. This is a distinct mechanism from the
+confirmed-broken IC→IC cross-contract *write* pattern (see
+[[genlayer-crosscontract-write-broken]]): a value-only send to an EOA is an *external message*
+through the contract's ghost contract and "always executes on finalization" per that same page —
+not the state-mutating call-another-contract's-method pattern that silently no-ops on Bradbury.
+
+That said, docs-verification is not the same as a live proof. Two things remain genuinely open:
+1. No live end-to-end payout has actually been run in *this* project — `claim_payout` has only
+   been exercised in gltest's direct-mode mock, which does not simulate the real value-transfer
+   path at all (mocked emit calls are no-ops). Before trusting it with meaningful real value, run a
+   small-stake live test on Bradbury and confirm the recipient's balance actually increases.
+2. **Failed transfers are not recoverable.** Per the same docs page: "If the child transaction
+   fails, the value is not automatically returned to the sender." `claim_payout` sets
+   `position["claimed"] = True` *before* calling `emit_transfer` (correct checks-effects-interactions
+   ordering, and the only way to prevent a double-claim) — but this means if the EOA-transfer child
+   transaction somehow fails after finalization, the position is permanently stuck: marked claimed,
+   value never arrived, and no code path lets that holder retry. This is the same accepted trade-off
+   every CEI-ordered payout design makes (the alternative — marking claimed *after* the transfer —
+   reopens a double-claim window); flagged here as a conscious, understood risk rather than a
+   silent gap.
 
 ### Parimutuel rounding dust
 
@@ -174,6 +267,27 @@ security thinking. Two more patterns from that same feedback were checked and ar
   pass clean on this file. That said: lint passing is not the same as this exact pattern having
   been exercised against real GenVM execution — see PLAT-01 in the platform review — so this is
   reported as "structurally distinct and lint-clean," not "proven safe under real consensus."
+- **Header format and dependency hash.** A later review pass claimed the `from genlayer import *`
+  line must be exactly line 3. Checked against `genlayerlabs/intelligent-oracle`'s own
+  `IntelligentOracle.py`: its line 3 is `import json`, with `from genlayer import *` further down —
+  same shape both contracts here already use (stdlib imports first, then the genlayer import).
+  There is no line-position requirement; what matters is the `Depends` comment on line 1. Separately
+  checked whether the pinned hash (`py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6`)
+  is stale: `genvm-lint` surfaces a newer runner
+  (`1zr6nqk597d97kg0dyxg0shhrykx5v02zjgnyrajapy4wlqvfvwh`) as "available." Checked
+  `genlayer-studio`'s own CI (`.github/workflows/genvm-lint.yml`): that hash is the in-development
+  `genvm-main` runner with a new SDK layout that "released genvm-linter (<= 0.11.0) cannot load yet"
+  — i.e. pre-release, not yet what Bradbury's validators run, and not adopted by a single canonical
+  GenLayer example contract (boilerplate, intelligent-oracle, and every docs snippet checked all
+  still pin the same hash this project uses). Not changed — this is the live-proven, currently-real
+  hash, confirmed identical to what `genlayer code` returns for the deployed `ClaimFactory`.
+  Verified on-chain directly: `genlayer code 0x306Cf15AB31ceD28f65d28d43179FB3aE349ABaE` returns
+  source byte-identical to `contracts/ClaimFactory.py`, and `genlayer trace` on the deploy
+  transaction (`0xc80950afef0e8c25e79bd1fe62efbd2e196da58563e837c8b779f441cf68d372`) shows
+  `result_code: 0` with real, non-empty `return_data` — consistent with success, not the failure
+  code a wrong-hash deploy would produce (that same review pass's claim that `result_code: 0` means
+  "silent deploy, nothing persists" directly contradicts its own separate claim that `result_code: 2`
+  means wrong hash; the two can't both be right, and the live evidence here matches `0` = success).
 
 ## Other, non-architectural findings
 

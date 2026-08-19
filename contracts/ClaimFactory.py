@@ -7,6 +7,7 @@ from genlayer import *
 import genlayer.gl as gl
 
 MAX_TAGS = 6
+MAX_TAG_LEN = 40
 MAX_QUESTION_LEN = 600
 
 
@@ -81,6 +82,8 @@ class ClaimFactory(gl.Contract):
             )
         if len(tags) > MAX_TAGS:
             raise gl.vm.UserError(f"At most {MAX_TAGS} tags allowed.")
+        if any(len(tag) > MAX_TAG_LEN for tag in tags):
+            raise gl.vm.UserError(f"Tags must be at most {MAX_TAG_LEN} characters.")
         if len(question) > MAX_QUESTION_LEN:
             raise gl.vm.UserError("Question exceeds max length.")
 
@@ -115,6 +118,16 @@ class ClaimFactory(gl.Contract):
         }
         self.claim_meta[_normalize_address(address_hex)] = json.dumps(meta)
         return address_hex
+
+    @gl.public.view
+    def get_owner(self) -> str:
+        """Informational only -- the deployer's address, for provenance
+        display. `owner` gates nothing: every write on this contract
+        (deploy_claim) and on every Claim it spawns is intentionally
+        permissionless, economically gated by the creation fee and staking
+        rather than by an admin allowlist. There is no privileged action
+        anywhere in this system for owner to authorize."""
+        return self.owner.as_hex
 
     @gl.public.view
     def get_claims(self) -> list[str]:

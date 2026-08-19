@@ -102,6 +102,35 @@ def test_resolve_confidence_bare_float_never_crashes():
         assert isinstance(data["confidence"], str)
 
 
+def test_resolve_clamps_out_of_range_confidence():
+    """A hallucinating or adversarial leader can return a confidence outside
+    the prompt's requested [0.0, 1.0] range -- nothing in the validator's
+    fixed-width tolerance check rejects that on its own, since both leader
+    and validator independently re-run the same prompt and could agree with
+    each other while still being out of range. The contract must clamp
+    before persisting, so a permanently-stored confidence is always
+    meaningful regardless of what the model returned."""
+    vm = VMContext()
+    creator, = create_test_addresses(1)
+    with vm.activate():
+        claim = _deploy_resolvable_claim(vm, creator)
+        vm.mock_web(r"example\.com/standings", _web("Team A won."))
+        vm.mock_llm(
+            r"Equivalence Principle",
+            _wrapped_json({
+                "outcome": "YES",
+                "confidence": "1.7",  # out of range, both leader and validator agree
+                "reasoning_summary": "Team A won per standings.",
+                "key_evidence": ["Team A won."],
+            }),
+        )
+        warp_now(vm, "2099-01-01T00:00:00Z")
+        claim.resolve()
+
+        data = claim.get_claim()
+        assert data["confidence"] == "1.0"
+
+
 def test_resolve_inconclusive_when_evidence_insufficient():
     vm = VMContext()
     creator, = create_test_addresses(1)

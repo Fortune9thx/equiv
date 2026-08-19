@@ -64,15 +64,25 @@ def _parse_verdict_json(raw: str) -> dict:
 
 def _stringify_confidence(value) -> str:
     """Coerce any numeric confidence value to str before it can ever be
-    stored or returned as a bare float (GenVM calldata has no float type)."""
+    stored or returned as a bare float (GenVM calldata has no float type),
+    and clamp it to [0.0, 1.0]. The prompt asks the model for a value in
+    that range, but nothing enforces it -- a hallucinating or adversarial
+    leader could return "5.0" or "-1.0", and the validator's tolerance
+    check (a fixed-width band around whatever the leader said) does not
+    reject out-of-range values on its own, since both leader and validator
+    could independently drift outside [0, 1] and still agree with each
+    other. Clamping here keeps the permanently-stored confidence meaningful
+    regardless of what either side returned."""
     if isinstance(value, str):
         try:
-            return str(float(value))
+            parsed = float(value)
         except ValueError:
             return "0.0"
-    if isinstance(value, (int, float)):
-        return str(float(value))
-    return "0.0"
+    elif isinstance(value, (int, float)):
+        parsed = float(value)
+    else:
+        return "0.0"
+    return str(max(0.0, min(1.0, parsed)))
 
 
 def _bounded_evidence_json(items: list, max_len: int) -> str:

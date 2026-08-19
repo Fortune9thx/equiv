@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.1.5 — strict pre-submission audit against canonical GenLayer sources (source only; not yet redeployed)
+
+- Ran a strict, adversarial pre-submission review against a reviewer-style checklist, verifying
+  every checkable claim against canonical sources (`genlayer-docs` raw markdown,
+  `genlayer-project-boilerplate`, `genlayerlabs/intelligent-oracle`, live `genlayer code`/
+  `genlayer trace`) rather than trusting the checklist or the existing code. See
+  `genlayer-strict-audit-canonical-verification` memory for the reusable pattern.
+- **Confirmed, not assumed:** `claim_payout`'s `_Recipient(...).emit_transfer(...)` payout pattern
+  matches GenLayer's own documented `Faucet` example verbatim — not the confirmed-broken IC→IC
+  cross-contract write pattern. `resolve()`'s custom `run_nondet_unsafe` leader/validator is the
+  pattern GenLayer's own docs and boilerplate call "recommended for most cases" for settlement
+  decisions, not a deviation to fix. Neither changed.
+- **Fixed:** confidence values from the LLM are now clamped to `[0.0, 1.0]` before they can ever be
+  returned from the leader or persisted — previously a hallucinating/adversarial leader could store
+  an out-of-range confidence undetected. `ClaimFactory.deploy_claim` now bounds each tag's length
+  (`MAX_TAG_LEN = 40`), not just the tag count. `ClaimFactory.owner` (stored, previously
+  unreachable) is now exposed via a purely informational `get_owner()` getter.
+- **Rejected, with reasoning:** the checklist's "two-phase strict_eq → prompt_non_comparative"
+  suggestion (would weaken, not strengthen, settlement-decision validation per GenLayer's own
+  guidance), a "from genlayer import \* must be line 3" claim (false — checked against
+  `intelligent-oracle`'s own source), and an "upgrade the dependency hash" suggestion (the newer
+  hash is an unreleased `genvm-main` runner GenLayer's own linter can't fully load yet).
+- Added a "Trust model and access control" section to `SECURITY.md` documenting why neither
+  contract has an owner-gated write (deliberate — a permissionless capital market), with an access
+  matrix and a live test
+  (`test_unauthorized_wallet_cannot_claim_a_position_it_never_took`) proving the real per-position
+  ownership boundary against a funded, uninvolved wallet on Bradbury.
+- 35/35 direct-mode tests passing (new: `test_resolve_clamps_out_of_range_confidence`). New
+  integration tests added (`test_factory_owner_is_informational_and_matches_deployer`,
+  `test_deploy_claim_rejects_oversized_tag`,
+  `test_unauthorized_wallet_cannot_claim_a_position_it_never_took`) — not yet run against a live
+  node in this pass; see `SECURITY.md`'s "Known, unresolved risks" for what remains genuinely
+  unproven live (full `resolve()` end-to-end).
+- **Not yet done:** as with 0.1.2–0.1.4, this round's contract fixes require a fresh `ClaimFactory`
+  deployment to reach the live contract.
+
 ## 0.1.4 — redeployed ClaimFactory (all 0.1.2/0.1.3 fixes now live)
 
 - Deployed a fresh `ClaimFactory` to GenLayer Bradbury Testnet at
