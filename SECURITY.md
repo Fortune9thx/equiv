@@ -8,20 +8,18 @@ deployment holding real funds.
 
 ## Deployment status note
 
-`ClaimFactory` is live on Bradbury at `0x306Cf15AB31ceD28f65d28d43179FB3aE349ABaE`, redeployed
-2026-08-19 specifically to carry the address-checksum fix (below) onto the live contract. This is
-the second deployment: the original address `0xC62245f05Abcf2f763E298641Ff2D97ED8865F30` ran
-pre-fix source and is now superseded (still reachable on-chain, but not the one the frontend
-points at). As before, Claim contracts are not upgradeable — every Claim spawned by a given
+`ClaimFactory` is live on Bradbury at `0x65880E6a4dD9561a6acC4C275958D710c391eDf2`, redeployed
+2026-08-19 (third deployment) to carry the 0.1.5 fixes onto the live contract. Prior addresses
+`0x306Cf15AB31ceD28f65d28d43179FB3aE349ABaE` (0.1.3 fixes) and
+`0xC62245f05Abcf2f763E298641Ff2D97ED8865F30` (pre-fix) ran older source and are now superseded
+(still reachable on-chain, but not what the frontend points at). Verified post-deploy: `genlayer
+trace` on the deploy transaction shows `result_code: 0` with real return data;
+`deploy/verify-deploy.mjs` confirms `get_claims_count()` reads back `0` on a fresh factory; a
+direct `get_owner()` read confirms the new getter works and returns the deploying account's
+address. As before, Claim contracts are not upgradeable — every Claim spawned by a given
 `ClaimFactory` runs whatever `Claim.py` source was embedded at that factory's deploy time. Any
 future contract-level fix again requires a fresh `ClaimFactory` deployment and a frontend env
 update to adopt it live.
-
-**A third round of fixes (confidence clamping, tag length bound, `get_owner()`) landed in source
-after this second deployment and are not yet on the live contract** — see "Fixed in source; not
-yet redeployed" below. None of the three are exploitable-today gaps (see each entry for why); they
-were bundled for the next deployment rather than triggering an immediate third redeploy on their
-own.
 
 ## Fixed (in source, and live on the current deployment)
 
@@ -62,9 +60,6 @@ own.
   See "Known risk: evidence-source prompt injection" below — the prompt now explicitly frames
   that content as untrusted data and instructs the model not to follow directives found within it.
   This raises the bar; it does not eliminate the risk (see below).
-
-## Fixed in source; not yet redeployed
-
 - **Unclamped LLM confidence could be stored out of [0.0, 1.0].** The prompt asks for a confidence
   between "0.0" and "1.0", but nothing enforced that range before storage — a hallucinating or
   adversarial leader returning "1.7" or "-3.0" would pass the validator's fixed-width tolerance

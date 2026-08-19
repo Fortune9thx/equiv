@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.6 — redeployed ClaimFactory (0.1.5 fixes now live)
+
+- Deployed a fresh `ClaimFactory` to GenLayer Bradbury Testnet at
+  `0x65880E6a4dD9561a6acC4C275958D710c391eDf2` (third deployment), embedding the 0.1.5-fixed
+  `contracts/Claim.py`/`ClaimFactory.py` source (confidence clamping, tag length bound,
+  `get_owner()`). Prior addresses `0x306Cf15AB31ceD28f65d28d43179FB3aE349ABaE` (0.1.3 fixes) and
+  `0xC62245f05Abcf2f763E298641Ff2D97ED8865F30` (pre-fix) are now superseded.
+- Same known `FINALIZED`-wait timeout as every prior deploy on this project recurred and was
+  resolved the same way: `genlayer trace` on the deploy transaction confirmed `result_code: 0`
+  with real return data before `waitForTransactionReceipt` ever resolved.
+- Verified post-deploy: `deploy/verify-deploy.mjs` confirms `get_claims_count()` reads `0` on the
+  fresh factory; a direct `get_owner()` read confirms the new getter works and returns the
+  deploying account's address (`0xC6E6d3b2acCaECeCeB40Ad4bD3dF123DDCB4e537`).
+- Updated `frontend/.env.local` and both Vercel `production`/`preview` environments'
+  `NEXT_PUBLIC_CLAIM_FACTORY_ADDRESS` to the new address, and redeployed the frontend so the
+  build-time-baked env var takes effect.
+- Updated `README.md`'s "Deployed contracts" section and `SECURITY.md`'s deployment status note —
+  all 0.1.5 findings are now fixed in source *and* live on the deployed contract.
+
 ## 0.1.5 — strict pre-submission audit against canonical GenLayer sources (source only; not yet redeployed)
 
 - Ran a strict, adversarial pre-submission review against a reviewer-style checklist, verifying
