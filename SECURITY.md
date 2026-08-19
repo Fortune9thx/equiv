@@ -21,6 +21,23 @@ address. As before, Claim contracts are not upgradeable — every Claim spawned 
 future contract-level fix again requires a fresh `ClaimFactory` deployment and a frontend env
 update to adopt it live.
 
+## Fixed — found via live manual testing, not review
+
+- **Wallet provider resolution broke on multi-wallet-extension browsers.** `useSignerClient()`
+  built the signing client from the bare `window.ethereum` global. With more than one wallet
+  extension installed (MetaMask + Coinbase Wallet, Rabby, etc. — a common real-world setup),
+  `window.ethereum` is whichever extension last claimed the global, which is not necessarily the
+  one the user actually connected through RainbowKit. Symptom, reproduced live: the header showed
+  a connected wallet, but every write (Create, Take Position, Resolve, Claim Payout) failed
+  immediately with "Connect a wallet to continue." Fixed by resolving the provider from wagmi's own
+  `connector.getProvider()` — the connector-specific EIP-1193 provider, resolved via EIP-6963
+  independently of the `window.ethereum` global — instead of assuming a single global provider.
+  Frontend-only change; no contract redeploy needed. This is the kind of bug that only a live click
+  surfaces — every prior review pass in this document (including the strict canonical-source audit)
+  checked the *shape* of the wallet-connection code (does it pass a provider at all, does it avoid
+  generating an ephemeral key) but had no way to catch a same-shaped-but-wrong-provider bug without
+  an actual multi-wallet browser exercising it.
+
 ## Fixed (in source, and live on the current deployment)
 
 - **Address checksum case-sensitivity broke every address-keyed lookup.** `positions` (in `Claim`)

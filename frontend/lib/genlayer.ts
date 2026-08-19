@@ -22,19 +22,29 @@ export function resolveChain(): (typeof CHAIN_BY_NAME)[GenlayerChainName] {
 
 /**
  * Build a genlayer-js client bound to the connected wallet address, using
- * the injected EIP-1193 provider (MetaMask, etc.) for signing. Wagmi /
- * RainbowKit own the connect-wallet UX (address display, network chrome);
- * genlayer-js owns the actual GenVM-aware read/write calls, since GenLayer
- * is not a plain EVM RPC target.
+ * an EIP-1193 provider for signing. Wagmi / RainbowKit own the
+ * connect-wallet UX (address display, network chrome); genlayer-js owns
+ * the actual GenVM-aware read/write calls, since GenLayer is not a plain
+ * EVM RPC target.
+ *
+ * `provider` should come from wagmi's active `connector.getProvider()`,
+ * NOT the bare `window.ethereum` global -- with more than one wallet
+ * extension installed (MetaMask + Coinbase Wallet, Rabby, etc., a very
+ * common setup), `window.ethereum` is whichever extension last claimed the
+ * global, which is not necessarily the one the user actually connected via
+ * RainbowKit (wagmi resolves the correct provider per-connector using
+ * EIP-6963, independent of that global). Falling back to `window.ethereum`
+ * here only covers a connector that doesn't expose `getProvider()`.
  */
-export function getGenlayerClient(account: Address) {
-  if (typeof window === "undefined" || !window.ethereum) {
-    throw new Error("No injected wallet provider found (window.ethereum).");
+export function getGenlayerClient(account: Address, provider?: Eip1193Provider) {
+  const resolvedProvider = provider ?? (typeof window !== "undefined" ? window.ethereum : undefined);
+  if (!resolvedProvider) {
+    throw new Error("No wallet provider available for the connected account.");
   }
   return createClient({
     chain: resolveChain(),
     account,
-    provider: window.ethereum,
+    provider: resolvedProvider,
   });
 }
 

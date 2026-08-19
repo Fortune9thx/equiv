@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.7 — fix wallet provider resolution for multi-wallet-extension browsers (frontend only)
+
+- **Fixed a real bug found during live manual testing:** `useSignerClient()` built the signing
+  client from the bare `window.ethereum` global, but a browser with more than one wallet extension
+  installed (MetaMask + Coinbase Wallet, Rabby, etc. — a common setup) can have `window.ethereum`
+  pointing at a *different* provider than the one the user actually connected through RainbowKit.
+  Symptom: the header shows a connected wallet, but submitting any write (Create, Take Position,
+  Resolve, Claim Payout) fails immediately with "Connect a wallet to continue."
+- Fixed by resolving the provider from wagmi's own `connector.getProvider()` (the canonical,
+  connector-specific EIP-1193 provider, resolved independently of the `window.ethereum` global via
+  EIP-6963) instead of assuming a single global provider. `getGenlayerClient()` now accepts an
+  explicit `provider` argument; `useSignerClient()` resolves it asynchronously (matching
+  `getProvider()`'s async signature) and falls back to `window.ethereum` only if a connector
+  doesn't expose `getProvider()`.
+- No contract changes; frontend-only, deployed straight to production.
+
 ## 0.1.6 — redeployed ClaimFactory (0.1.5 fixes now live)
 
 - Deployed a fresh `ClaimFactory` to GenLayer Bradbury Testnet at
