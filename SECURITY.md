@@ -8,18 +8,24 @@ deployment holding real funds.
 
 ## Deployment status note
 
-`ClaimFactory` is live on Bradbury at `0x65880E6a4dD9561a6acC4C275958D710c391eDf2`, redeployed
-2026-08-19 (third deployment) to carry the 0.1.5 fixes onto the live contract. Prior addresses
-`0x306Cf15AB31ceD28f65d28d43179FB3aE349ABaE` (0.1.3 fixes) and
+`ClaimFactory` is live on Bradbury at `0x3912627184B178d6a23b15F42C252609b6f4945C`, redeployed
+2026-08-20 (fourth deployment) to carry the 0.1.9 fund-safety fixes (zero-stake refund path,
+`withdraw_fees()`, `get_balance()`) onto the live contract. Prior addresses
+`0x65880E6a4dD9561a6acC4C275958D710c391eDf2` (0.1.5 fixes),
+`0x306Cf15AB31ceD28f65d28d43179FB3aE349ABaE` (0.1.3 fixes), and
 `0xC62245f05Abcf2f763E298641Ff2D97ED8865F30` (pre-fix) ran older source and are now superseded
-(still reachable on-chain, but not what the frontend points at). Verified post-deploy: `genlayer
-trace` on the deploy transaction shows `result_code: 0` with real return data;
-`deploy/verify-deploy.mjs` confirms `get_claims_count()` reads back `0` on a fresh factory; a
-direct `get_owner()` read confirms the new getter works and returns the deploying account's
-address. As before, Claim contracts are not upgradeable — every Claim spawned by a given
-`ClaimFactory` runs whatever `Claim.py` source was embedded at that factory's deploy time. Any
-future contract-level fix again requires a fresh `ClaimFactory` deployment and a frontend env
-update to adopt it live.
+(still reachable on-chain, but not what the frontend points at). This deploy went out during an
+active Bradbury-wide finalization backlog (see "Bradbury finalization stalls" below): the first
+broadcast attempt was rejected outright by the RPC node (`-32005 transaction gas rate limit
+exceeded: node is at capacity`, no GEN spent since nothing was ever sent), and the successful retry
+sat at `COMMITTING`/`NOT_VOTED` before reaching `ACCEPTED`. Verified post-deploy the same way as
+every prior redeploy: `genlayer-js getTransaction` confirms `statusName: ACCEPTED` and
+`txExecutionResultName: FINISHED_WITH_RETURN`; `deploy/verify-deploy.mjs` confirms
+`get_claims_count()` reads back `0` on a fresh factory; direct `get_owner()` and `get_balance()`
+reads confirm both new getters work. As before, Claim contracts are not upgradeable — every Claim
+spawned by a given `ClaimFactory` runs whatever `Claim.py` source was embedded at that factory's
+deploy time. Any future contract-level fix again requires a fresh `ClaimFactory` deployment and a
+frontend env update to adopt it live.
 
 ## Fixed — found via live manual testing, not review
 
@@ -51,7 +57,7 @@ update to adopt it live.
   immediately, but a `FINALIZED`-wait timeout after a successful `ACCEPTED` result no longer does.
   Affects every write in the app, since all four share this one hook.
 
-## Fixed — steward review, source only, not yet redeployed
+## Fixed — steward review (2026-08-20 redeploy: live on the current deployment)
 
 Two real fund-safety gaps flagged in external review, both confirmed and fixed:
 
@@ -94,13 +100,19 @@ CHANGELOG said so explicitly every time it was touched), so the bug went uncaugh
 Fixed throughout the file, including a second confirmed bug in the same file (`accounts[i].lower()`
 called directly on a `LocalAccount` object, which has no such method — needs `.address` first).
 
-**Honest status: none of this round's integration tests have been run against a live node yet.**
-`ClaimFactory.deploy_claim`'s own live transaction has been stuck unfinalized on Bradbury for hours
-at the time of this fix (see "Bradbury finalization stalls" below) — attempting a fresh live run
-right now would most likely just get stuck the same way, telling us nothing new. The contract-level
-fixes and their direct-mode tests are solid and verified (39/39 passing); the two new integration
-tests are believed correct against the corrected API but are unverified until the network recovers
-and a fresh `ClaimFactory` carrying these fixes is deployed.
+**Status: the fixed contract is now live** at `0x3912627184B178d6a23b15F42C252609b6f4945C`
+(2026-08-20, fourth deployment — see "Deployment status note" above), redeployed the same day
+despite an active Bradbury finalization backlog (the first broadcast attempt was outright rejected
+by the RPC node at capacity; the retry took a while to reach `ACCEPTED` but did). Manually verified
+live: `get_claims_count()`, `get_owner()`, and `get_balance()` all read back correctly on the fresh
+factory. **The automated integration test suite itself (`tests/integration/test_full_lifecycle.py`)
+has not yet been executed** — running it requires a `gltest.config.yaml` pointing at Bradbury plus
+funded test-account keys, neither of which exist in this repo yet (deliberately: raw account keys
+are never committed, per this project's own key-handling rules). The two new tests are believed
+correct against the corrected API (confirmed by direct inspection and a reproduced `TypeError`
+against the old, broken calling convention) but remain unverified by an actual pytest run until that
+config exists and the network is healthy enough for the several live consensus rounds the suite
+needs (each `resolve()` call is a real LLM/web-fetch round, not instant).
 
 ## Fixed (in source, and live on the current deployment)
 

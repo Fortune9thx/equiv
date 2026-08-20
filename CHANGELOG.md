@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.10 — redeployed ClaimFactory (0.1.9 fund-safety fixes now live)
+
+- Deployed a fresh `ClaimFactory` to GenLayer Bradbury Testnet at
+  `0x3912627184B178d6a23b15F42C252609b6f4945C` (fourth deployment), embedding the 0.1.9-fixed
+  `contracts/Claim.py`/`ClaimFactory.py` source (zero-stake refund path, `withdraw_fees()`,
+  `get_balance()`). Prior address `0x65880E6a4dD9561a6acC4C275958D710c391eDf2` (0.1.5 fixes) is
+  now superseded.
+- Deployed during an active Bradbury-wide finalization backlog: the first broadcast attempt was
+  rejected outright by the RPC node (`-32005 transaction gas rate limit exceeded: node is at
+  capacity`, no GEN spent since nothing was ever sent); the retry broadcast successfully and sat at
+  `COMMITTING`/`NOT_VOTED` before reaching `ACCEPTED` with `FINISHED_WITH_RETURN`.
+- Verified post-deploy: `deploy/verify-deploy.mjs` confirms `get_claims_count()` reads `0` on the
+  fresh factory; direct `get_owner()` and `get_balance()` reads confirm both new getters work.
+- Updated `frontend/.env.local` and both Vercel `production`/`preview` environments'
+  `NEXT_PUBLIC_CLAIM_FACTORY_ADDRESS` to the new address, and redeployed the frontend so the
+  build-time-baked env var takes effect.
+- Updated `README.md`'s "Deployed contracts" section and `SECURITY.md`'s deployment status note.
+- **Not yet done:** the automated `tests/integration/test_full_lifecycle.py` suite has not been
+  executed against this (or any) live deployment — no `gltest.config.yaml`/funded test-account
+  keys exist in this repo yet. The contract-level fixes themselves are live and manually verified;
+  the pytest-level proof is still pending.
+
 ## 0.1.9 — fix two fund-safety gaps flagged by steward review (source only; not yet redeployed)
 
 - **Fixed:** `claim_payout` permanently stranded every position's funds if the resolved outcome had
