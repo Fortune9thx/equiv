@@ -453,13 +453,27 @@ shape:
             payout = int(position["amount"])
         else:
             winning_pool = int(self.outcome_pools.get(self.resolved_outcome, "0"))
-            if position["outcome"] != self.resolved_outcome or winning_pool == 0:
+            if winning_pool == 0:
+                # The resolved outcome had zero stakers -- every position
+                # was placed on an outcome that did not end up winning, so
+                # there is no legitimate winner to distribute the pool to.
+                # This is a realistic, non-adversarial scenario (everyone
+                # bets NO, the real answer turns out YES), not an edge case
+                # to dismiss: previously this fell into the "you lost, your
+                # payout is zero" branch below for every single position,
+                # permanently stranding the entire pool in the contract
+                # with no withdrawal path for anyone. Treated the same as
+                # STATUS_INCONCLUSIVE instead -- refund each position its
+                # own stake.
+                payout = int(position["amount"])
+            elif position["outcome"] != self.resolved_outcome:
                 position["claimed"] = True
                 position["payout"] = "0"
                 self.positions[sender_hex] = json.dumps(position)
                 return
-            total_pool = sum(int(self.outcome_pools.get(o, "0")) for o in self.outcomes)
-            payout = (int(position["amount"]) * total_pool) // winning_pool
+            else:
+                total_pool = sum(int(self.outcome_pools.get(o, "0")) for o in self.outcomes)
+                payout = (int(position["amount"]) * total_pool) // winning_pool
 
         # Effects before interaction: mark claimed prior to the transfer.
         position["claimed"] = True

@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.1.9 — fix two fund-safety gaps flagged by steward review (source only; not yet redeployed)
+
+- **Fixed:** `claim_payout` permanently stranded every position's funds if the resolved outcome had
+  zero stakers (winning_pool == 0) — a realistic scenario, not an edge case, since everyone can
+  legitimately bet the same (wrong) way. Now refunds each position its own stake in that case, same
+  as `INCONCLUSIVE`. Tested in both direct-mode (mocked consensus) and a new live integration test
+  (real `resolve()` consensus).
+- **Fixed:** `ClaimFactory` collected creation fees into its own balance with no way to ever
+  withdraw them. Added owner-only `withdraw_fees()` and a public `get_balance()` getter. This is
+  the one and only owner-gated write across both contracts — deliberately scoped to the factory's
+  own fee revenue, never touching a Claim's positions, resolution, or payouts (see SECURITY.md's
+  "Trust model and access control" for why this doesn't reopen the no-admin-writes design). Tested
+  for access control and the zero-balance no-op path in direct-mode; the real value-movement happy
+  path is covered by a new live integration test.
+- **Also found and fixed while writing the new tests:** `tests/integration/test_full_lifecycle.py`'s
+  entire calling convention didn't match the installed `genlayer-test` SDK — every method call was
+  missing the `.call()`/`.transact()` the schema-bound `ContractFunction` API actually requires,
+  confirmed by reproducing the exact `TypeError` directly. That file had never been executed against
+  a live node in this project, so the bug was invisible until now. Fixed throughout, along with a
+  second bug in the same file (`.lower()` called directly on a `LocalAccount` object instead of
+  `.address.lower()`).
+- 39/39 direct-mode tests passing (new: 1 in `test_precedent.py`, 4 in the new
+  `test_claim_factory.py`). Two new integration tests added but **not yet run against a live
+  node** — Bradbury's finalization pipeline has been stuck for this project's own transactions for
+  hours at the time of this fix (see SECURITY.md), making a fresh live run uninformative right now.
+- **Not yet done:** as with every prior contract-source round, these fixes require a fresh
+  `ClaimFactory` deployment to reach the live contract — deferred until the network stabilizes
+  enough for a deploy to actually finalize.
+
 ## 0.1.8 — fix false "Timed out" errors on transactions that already succeeded (frontend only)
 
 - **Fixed a second real bug found during the same live test session:** `useClaimTransaction`

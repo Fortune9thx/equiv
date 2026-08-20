@@ -124,6 +124,52 @@ def test_losing_position_gets_zero_payout():
         assert alice_pos["claimed"] is True
 
 
+def test_refunds_stake_when_resolved_outcome_has_no_stakers():
+    """Regression test for a real, non-adversarial scenario: everyone stakes
+    on NO, but the claim genuinely resolves YES. Nobody staked on the
+    winning outcome, so winning_pool == 0 -- there is no legitimate winner
+    to distribute the pool to. Every staker must get their own stake back,
+    not a permanently-stranded zero payout."""
+    vm = VMContext()
+    creator, alice, bob = create_test_addresses(3)
+    with vm.activate():
+        vm.sender = creator
+        claim = deploy_contract(
+            CLAIM_PATH, vm,
+            "Q?", "criteria", ["YES", "NO"], _future(2),
+            ["https://example.com/source"], [],
+        )
+        vm.sender = alice
+        vm.value = 100
+        claim.take_position("NO")
+        vm.sender = bob
+        vm.value = 50
+        claim.take_position("NO")
+
+        vm.mock_web(r"example\.com/source", _web("evidence"))
+        vm.mock_llm(
+            r"Equivalence Principle",
+            _wrapped_json({
+                "outcome": "YES", "confidence": "0.9",
+                "reasoning_summary": "r", "key_evidence": ["e"],
+            }),
+        )
+        warp_now(vm, "2099-01-01T00:00:00Z")
+        claim.resolve()
+
+        vm.sender = alice
+        claim.claim_payout()
+        alice_pos = claim.get_position(to_hex(alice))
+        assert alice_pos["payout"] == "100"
+        assert alice_pos["claimed"] is True
+
+        vm.sender = bob
+        claim.claim_payout()
+        bob_pos = claim.get_position(to_hex(bob))
+        assert bob_pos["payout"] == "50"
+        assert bob_pos["claimed"] is True
+
+
 def test_double_claim_reverts():
     vm = VMContext()
     creator, alice = create_test_addresses(2)

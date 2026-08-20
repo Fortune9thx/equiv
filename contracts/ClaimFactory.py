@@ -19,6 +19,20 @@ def _consensus_now() -> int:
     return int(datetime.fromisoformat(str(raw).replace("Z", "+00:00")).timestamp())
 
 
+@gl.evm.contract_interface
+class _Recipient:
+    """Nameless-transfer interface used to pay out accumulated creation-fee
+    revenue to the factory owner. Same canonical pattern as Claim.py's copy
+    (verified against genlayer-docs' value-transfers.mdx Faucet example) --
+    see that file's docstring for the full explanation."""
+
+    class View:
+        pass
+
+    class Write:
+        pass
+
+
 def _normalize_address(addr: str) -> str:
     """TreeMap keys and equality comparisons against caller-supplied address
     strings use this everywhere -- Address.as_hex is an EIP-55-style
@@ -121,13 +135,40 @@ class ClaimFactory(gl.Contract):
 
     @gl.public.view
     def get_owner(self) -> str:
-        """Informational only -- the deployer's address, for provenance
-        display. `owner` gates nothing: every write on this contract
-        (deploy_claim) and on every Claim it spawns is intentionally
-        permissionless, economically gated by the creation fee and staking
-        rather than by an admin allowlist. There is no privileged action
-        anywhere in this system for owner to authorize."""
+        """The deployer's address. Every write that touches a Claim's own
+        data (deploy_claim, and everything on the Claim contracts it spawns)
+        remains intentionally permissionless -- owner gates none of that.
+        The one narrow exception is withdraw_fees() below: owner-only,
+        and scoped strictly to this factory's own accumulated creation-fee
+        balance, never to a Claim's positions, resolution, or payouts."""
         return self.owner.as_hex
+
+    @gl.public.view
+    def get_balance(self) -> str:
+        """This factory's own GEN balance -- accumulated, unwithdrawn
+        creation-fee revenue from deploy_claim calls. Exposed so the
+        recoverable lifecycle in withdraw_fees() is observable, not just
+        assumed: anyone can check what's actually claimable before an owner
+        withdraws it."""
+        return str(int(self.balance))
+
+    @gl.public.write
+    def withdraw_fees(self) -> None:
+        """Owner-only recovery path for this factory's own accumulated
+        balance -- creation-fee revenue from deploy_claim, which is
+        protocol revenue, not user-locked capital; it never belongs to any
+        specific Claim or position. Without this, that revenue had no way
+        to ever leave the contract once collected, permanently stranding
+        it. Deliberately narrow: sweeps only this contract's own balance to
+        its own deployer, and cannot touch a Claim's positions, resolution
+        state, or payouts -- it does not reintroduce the admin-can-block-a-
+        Claim risk this project otherwise avoids by design (see
+        SECURITY.md's "Trust model and access control")."""
+        if gl.message.sender_address != self.owner:
+            raise gl.vm.UserError("Only the factory owner can withdraw fees.")
+        amount = u256(self.balance)
+        if amount > 0:
+            _Recipient(self.owner).emit_transfer(value=amount)
 
     @gl.public.view
     def get_claims(self) -> list[str]:

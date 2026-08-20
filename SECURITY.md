@@ -51,6 +51,57 @@ update to adopt it live.
   immediately, but a `FINALIZED`-wait timeout after a successful `ACCEPTED` result no longer does.
   Affects every write in the app, since all four share this one hook.
 
+## Fixed — steward review, source only, not yet redeployed
+
+Two real fund-safety gaps flagged in external review, both confirmed and fixed:
+
+- **A resolved outcome with zero stakers permanently stranded every position's funds.**
+  `claim_payout`'s only path to a real payout required `position["outcome"] == self.resolved_outcome`
+  with a nonzero `winning_pool`; if *nobody* staked on the outcome that actually won (a realistic,
+  non-adversarial scenario — everyone bets NO, the real answer turns out YES), every single position,
+  regardless of what it staked on, fell into the "you lost, payout is zero" branch. The entire pool
+  had no withdrawal path for anyone. Fixed: when `winning_pool == 0` on a genuinely resolved (not
+  `INCONCLUSIVE`) outcome, every position is refunded its own stake, the same treatment as
+  `INCONCLUSIVE` — there is no legitimate winner to distribute to, so nobody should lose their stake
+  to an accounting gap. Covered by
+  `tests/direct/test_precedent.py::test_refunds_stake_when_resolved_outcome_has_no_stakers` (mocked
+  consensus) and `tests/integration/test_full_lifecycle.py::test_no_stake_on_winning_outcome_refunds_every_position`
+  (real `resolve()` consensus, not yet run live — see below).
+- **`ClaimFactory`'s collected creation fees had no recoverable lifecycle.** `deploy_claim` collects
+  `creation_fee` GEN into the factory's own balance on every call, but nothing could ever move that
+  balance back out — no withdraw, no sweep, permanently stranding accumulated protocol revenue (not
+  user-locked capital; nobody's position or payout depended on it, but it was still unrecoverable by
+  design). Added `withdraw_fees()` (owner-only, sweeps the factory's own balance to its own deployer;
+  see "Trust model" above for why this narrow exception doesn't reopen the no-admin-writes design)
+  and `get_balance()` (a public view, so the lifecycle is observable, not just assumed). Access
+  control and the zero-balance no-op path are covered by
+  `tests/direct/test_claim_factory.py` (four tests, all direct-mode, no live node needed); the real
+  value-movement happy path is covered by
+  `tests/integration/test_full_lifecycle.py::test_owner_can_withdraw_accumulated_creation_fees`, not
+  yet run live — see below.
+
+**Found and fixed in the same pass: the entire integration test file's calling convention didn't
+match the installed SDK.** While writing the new tests above, direct inspection of
+`gltest/contracts/contract.py`/`contract_functions.py` (installed `genlayer-test==0.29.2`) showed
+every schema-bound contract method returns a `ContractFunction` descriptor, not a result — reads
+need an explicit `.call()`, writes need an explicit `.transact(...)`; there is no `__call__` on that
+class. The version of `test_full_lifecycle.py` written earlier in this project called every method
+directly with neither (`factory.get_claims()`, `claim.connect(x).resolve()`), which would raise
+`TypeError`/`AttributeError` immediately on any real run — confirmed by reproducing the exact
+`TypeError` in an isolated interpreter session against the same binding pattern, not just by reading
+the source. That file was never actually executed against a live node in this project (its own
+CHANGELOG said so explicitly every time it was touched), so the bug went uncaught the whole time.
+Fixed throughout the file, including a second confirmed bug in the same file (`accounts[i].lower()`
+called directly on a `LocalAccount` object, which has no such method — needs `.address` first).
+
+**Honest status: none of this round's integration tests have been run against a live node yet.**
+`ClaimFactory.deploy_claim`'s own live transaction has been stuck unfinalized on Bradbury for hours
+at the time of this fix (see "Bradbury finalization stalls" below) — attempting a fresh live run
+right now would most likely just get stuck the same way, telling us nothing new. The contract-level
+fixes and their direct-mode tests are solid and verified (39/39 passing); the two new integration
+tests are believed correct against the corrected API but are unverified until the network recovers
+and a fresh `ClaimFactory` carrying these fixes is deployed.
+
 ## Fixed (in source, and live on the current deployment)
 
 - **Address checksum case-sensitivity broke every address-keyed lookup.** `positions` (in `Claim`)
@@ -115,24 +166,28 @@ update to adopt it live.
 
 ## Trust model and access control
 
-Equiv has **no owner-gated write anywhere in either contract**, and this is a deliberate design
-choice, not an oversight: it is a permissionless capital market, and an admin who could pause it,
-change its fee, or block a Claim would itself be a centralization/rug risk in a system whose entire
-value proposition is trustless resolution. Access control here is economic (creation fee, staking)
-and per-item (a position belongs to whoever holds it), not role-based:
+Equiv has **exactly one owner-gated write across both contracts** — `ClaimFactory.withdraw_fees()`
+(added 2026-08-20, see "Fixed" below) — and every other write remains deliberately permissionless:
+it is a permissionless capital market, and an admin who could pause it, block a Claim, or touch a
+position would itself be a centralization/rug risk in a system whose entire value proposition is
+trustless resolution. `withdraw_fees()` doesn't reintroduce that risk because it is scoped as
+narrowly as possible: it can only move the factory's *own* accumulated balance (creation-fee
+revenue, not user-locked capital) to its own deployer, and cannot touch a Claim's positions,
+resolution state, or payouts. Access control everywhere else remains economic (creation fee,
+staking) and per-item (a position belongs to whoever holds it), not role-based:
 
 | Method | Contract | Who can call it | What actually gates it |
 | --- | --- | --- | --- |
 | `deploy_claim` | ClaimFactory | Anyone | Must send ≥ `creation_fee`; input validation |
+| `withdraw_fees` | ClaimFactory | **Owner only** | `gl.message.sender_address == self.owner`; scoped to the factory's own balance only |
 | `take_position` | Claim | Anyone | Claim must be `Open`, before `end_time`, value > 0 |
 | `resolve` | Claim | Anyone | Claim must be `Open` and past `end_time` (no privileged resolver — this is intentional, see "Known, unresolved risks") |
 | `claim_payout` | Claim | Anyone | Only pays out `gl.message.sender_address`'s **own** position (`self.positions[normalize(sender)]`); no position → `UserError`; already claimed → `UserError` |
 | every `@gl.public.view` | both | Anyone | Read-only; no state change possible |
 
-`ClaimFactory.owner` (see "Fixed" above) is stored and exposed via `get_owner()` purely for
-provenance display — it authorizes nothing. `claim_payout` is the closest analogue to a
-per-item ownership check (a vault/loan's own "owner" field, in more admin-style contract designs):
-it already restricts every payout to the caller's own stored position, verified live in
+`claim_payout` is the closest analogue to a per-item ownership check (a vault/loan's own "owner"
+field, in more admin-style contract designs): it already restricts every payout to the caller's own
+stored position, verified live in
 `tests/integration/test_full_lifecycle.py::test_unauthorized_wallet_cannot_claim_a_position_it_never_took`,
 which has a second, funded wallet that never staked on a resolved Claim attempt `claim_payout` and
 confirms it gets a real on-chain error, not a silent success. Cross-contract writes
