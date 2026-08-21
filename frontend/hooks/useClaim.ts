@@ -7,7 +7,22 @@ import { useClaimTransaction } from "./useClaimTransaction";
 import { ClaimMethods } from "@/lib/contracts";
 import type { ClaimDetail, Position } from "@/lib/types";
 
-export function useClaimDetail(address: string | undefined) {
+/**
+ * `keepPollingOnError` is set once the caller has independently confirmed
+ * (via ClaimFactory.get_claim_meta) that this address is a genuinely
+ * registered Claim -- not just any bad input. A freshly-deployed Claim's
+ * own contract can take a long, unpredictable time to become independently
+ * readable on Bradbury even after its deploy_claim transaction has fully
+ * succeeded (a real, observed network characteristic, not a bug -- see
+ * SECURITY.md's "Bradbury finalization stalls"). Without this, a brand
+ * new Claim would show a dead-end "not found" error the instant TanStack's
+ * default retries (a few seconds) ran out, even though it's just waiting
+ * on the network, not actually missing.
+ */
+export function useClaimDetail(
+  address: string | undefined,
+  options?: { keepPollingOnError?: boolean }
+) {
   const client = useReadOnlyClient();
   return useQuery({
     queryKey: ["claim-detail", address],
@@ -21,10 +36,13 @@ export function useClaimDetail(address: string | undefined) {
     enabled: Boolean(address),
     // Resolution can be mid-flight (status "Resolving") -- poll while a
     // claim isn't in a terminal state so the UI reflects consensus landing
-    // without the user needing to refresh.
+    // without the user needing to refresh. Also keep polling through an
+    // error state for a confirmed-real Claim still waiting to finalize.
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      return status === "Resolving" ? 4000 : false;
+      if (status === "Resolving") return 4000;
+      if (query.state.status === "error" && options?.keepPollingOnError) return 8000;
+      return false;
     },
   });
 }

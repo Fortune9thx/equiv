@@ -2,8 +2,9 @@
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Loader2 } from "lucide-react";
 import { useClaimDetail } from "@/hooks/useClaim";
+import { useClaimMeta } from "@/hooks/useClaimFactory";
 import { StatusBadge } from "@/components/claim/StatusBadge";
 import { ResolutionTheater } from "@/components/claim/ResolutionTheater";
 import { PositionPanel } from "@/components/claim/PositionPanel";
@@ -14,29 +15,82 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 export default function ClaimDetailPage() {
   const params = useParams<{ address: string }>();
   const address = params.address;
-  const { data: claim, isLoading, isError } = useClaimDetail(address);
 
-  if (isLoading) {
-    return (
-      <div className="mx-auto max-w-5xl space-y-6 px-6 py-14">
-        <Skeleton className="h-10 w-2/3" />
-        <Skeleton className="h-64 w-full rounded-[var(--radius-lg)]" />
-      </div>
-    );
+  // ClaimFactory registers a Claim's metadata the instant deploy_claim
+  // succeeds, but the Claim contract itself can take a long, unpredictable
+  // time to become independently readable on Bradbury after that -- a real
+  // network characteristic (see SECURITY.md's "Bradbury finalization
+  // stalls"), not a sign anything is wrong. Checking the factory's registry
+  // is how this page tells "still finalizing" apart from "genuinely never
+  // existed" instead of showing the same dead-end error for both.
+  const { data: claimMeta, isError: isMetaError } = useClaimMeta(address);
+  const { data: claim, isError: isClaimError } = useClaimDetail(address, {
+    keepPollingOnError: Boolean(claimMeta),
+  });
+
+  if (claim) {
+    return <ClaimDetailContent claim={claim} address={address} />;
   }
 
-  if (isError || !claim) {
+  if (isClaimError && claimMeta) {
+    return <ClaimFinalizingView meta={claimMeta} address={address} />;
+  }
+
+  if (isClaimError && isMetaError) {
     return (
       <div className="mx-auto max-w-lg px-6 py-24 text-center">
         <h1 className="mb-2 text-xl font-semibold">Claim not found</h1>
         <p className="text-sm text-[var(--foreground-muted)]">
           No Claim contract could be read at{" "}
-          <span className="font-mono-tight">{address}</span>.
+          <span className="font-mono-tight">{address}</span>, and ClaimFactory has no record of
+          this address either. Double-check the address, or that it was created on the network
+          this app currently points at.
         </p>
       </div>
     );
   }
 
+  // Still loading (metadata check, first read attempt, or both).
+  return (
+    <div className="mx-auto max-w-5xl space-y-6 px-6 py-14">
+      <Skeleton className="h-10 w-2/3" />
+      <Skeleton className="h-64 w-full rounded-[var(--radius-lg)]" />
+    </div>
+  );
+}
+
+function ClaimFinalizingView({
+  meta,
+  address,
+}: {
+  meta: NonNullable<ReturnType<typeof useClaimMeta>["data"]>;
+  address: string;
+}) {
+  return (
+    <div className="mx-auto max-w-2xl px-6 py-24 text-center">
+      <div className="mb-5 flex items-center justify-center gap-2 text-sm text-[var(--primary)]">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span className="font-medium">Finalizing on the network</span>
+      </div>
+      <h1 className="mb-3 text-2xl font-semibold leading-tight">{meta.question}</h1>
+      <p className="mx-auto mb-2 max-w-md text-sm text-[var(--foreground-muted)]">
+        This Claim was created successfully and is registered on-chain, but the network hasn&apos;t
+        finished finalizing its contract yet. This page will update automatically once it&apos;s
+        ready -- on GenLayer&apos;s Bradbury testnet this can occasionally take a while. No action
+        needed; your stake is safe.
+      </p>
+      <p className="font-mono-tight text-xs text-[var(--foreground-subtle)]">{address}</p>
+    </div>
+  );
+}
+
+function ClaimDetailContent({
+  claim,
+  address,
+}: {
+  claim: NonNullable<ReturnType<typeof useClaimDetail>["data"]>;
+  address: string;
+}) {
   return (
     <div className="mx-auto max-w-5xl px-6 py-14">
       <div className="mb-8">

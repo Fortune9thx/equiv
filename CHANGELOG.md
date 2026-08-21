@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.11 — fix "Claim not found" dead-end for freshly-created Claims (frontend only)
+
+- **Fixed a real UX bug, reported live by a user hitting it during testing:** a Claim's detail
+  page (`/claims/[address]`) could show a hard "Claim not found" error for a Claim that had *just*
+  been created successfully — indistinguishable from an address that never existed. The real cause
+  is the documented Bradbury finalization lag (see "Bradbury finalization stalls" in SECURITY.md):
+  `ClaimFactory` registers a Claim's metadata the instant `deploy_claim` succeeds, but the Claim
+  contract itself can take a long, unpredictable time afterward to become independently readable.
+  The page now checks `ClaimFactory.get_claim_meta` to tell "still finalizing" apart from
+  "genuinely never existed": a confirmed-real Claim that isn't independently readable yet now
+  shows a reassuring "Finalizing on the network" state (with its real question, pulled from the
+  factory's metadata) and keeps polling automatically; only an address the factory has no record
+  of shows the harder "not found" message.
+- Root-causing this took an unusually long detour: verifying the fix live surfaced a series of
+  false leads (suspected HMR corruption, an orphaned dev-server process, a stale `.next` build
+  cache, a React Strict Mode theory) before the real explanation emerged — TanStack Query's
+  focus-manager pauses retries in full while `document.visibilityState === "hidden"`, which is
+  simply always true for the automated browser tool used to test this, not for a real user's
+  visible tab. Confirmed conclusively by forcing `document.visibilityState` to `"visible"` in that
+  same tab, at which point the fix rendered exactly as intended. Verified against a real
+  production build (`next build && next start`), not just dev mode, and against the user's actual
+  affected Claim address live.
+- No contract changes; frontend-only, deployed straight to production.
+
 ## 0.1.10 — redeployed ClaimFactory (0.1.9 fund-safety fixes now live)
 
 - Deployed a fresh `ClaimFactory` to GenLayer Bradbury Testnet at

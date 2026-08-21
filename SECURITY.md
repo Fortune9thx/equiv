@@ -249,11 +249,15 @@ bug in `ClaimFactory.py`/`Claim.py` (execution was unanimous and correct on all 
 and not something any client-side code change can route around — the underlying contract state is
 genuinely not readable by any RPC call until the network's finalization pipeline actually processes
 it. Frontend transaction UX (0.1.8, above) already avoids treating this as a hard failure for the
-*originating* write, but a freshly-created Claim's own detail page can still correctly show "not
-found" for an extended, unpredictable period while this is happening — accurate, not a bug, given
-the contract genuinely isn't finalized yet. No client-side mitigation is possible; flagged here as
-an observed operational characteristic of testnet infrastructure this project depends on but does
-not control, and a candidate to report to the GenLayer team as a possible platform-level gap
+*originating* write. A freshly-created Claim's own detail page previously showed a hard "not found"
+error during this window, indistinguishable from a genuinely bad address — technically accurate,
+but alarming and reported live by a user who hit it (see 0.1.11): fixed by checking
+`ClaimFactory.get_claim_meta` to tell "still finalizing" apart from "genuinely never existed," so a
+confirmed-real Claim now shows a "Finalizing on the network" state (with its real question) and
+keeps polling instead. The underlying wait itself is still unavoidable — no client-side mitigation
+can make the contract readable before the network actually finalizes it; flagged here as an
+observed operational characteristic of testnet infrastructure this project depends on but does not
+control, and a candidate to report to the GenLayer team as a possible platform-level gap
 specifically affecting the factory-deploy pattern this project (and the canonical
 `intelligent-oracle` reference) both use.
 
