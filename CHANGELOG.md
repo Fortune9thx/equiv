@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.12 — redeployed ClaimFactory after the prior one's registry became unreadable
+
+- **Fixed a real, reviewer-reported issue: the live `ClaimFactory` had become completely
+  unreadable.** External feedback said "the frontend isn't reading the on-chain registry." Verified
+  directly against the contract, not the frontend: every view method on
+  `0x3912627184B178d6a23b15F42C252609b6f4945C` (`get_owner`, `get_balance`, `get_claims_count`,
+  `get_claims`) failed identically with a contract-state RPC error, reproduced from a plain Node
+  script with no frontend code involved — confirming this was never a frontend bug. Likely cause:
+  that factory's `withdraw_fees()` call had been stuck unfinalized for many hours, the longest any
+  transaction against this project has remained pending, and a transaction stuck that long appears
+  able to block all reads to its own contract (see SECURITY.md's new "ClaimFactory registry became
+  unreadable" section for the full account and the GenLayer-team-report candidate this points to).
+- **Fix:** deployed a fresh `ClaimFactory` (fifth deployment,
+  `0xDF4AA4ddB47454899554291ba83Bc564D11536AF`) — no contract-code changes needed, since the source
+  itself was never the problem. Confirmed clean immediately: all four view methods succeed on the
+  new address. Updated `frontend/.env.local` and both Vercel `production`/`preview` environments,
+  redeployed the frontend, and verified live (`https://equiv-x9.vercel.app/claims` now correctly
+  shows "No Claims yet" with a clean read, no errors, in a fresh browser session).
+- The two Claims and 2 GEN of accumulated fees on the broken factory are no longer reachable
+  through the app — the same permanent-supersession trade-off every prior redeploy has made.
+
 ## 0.1.11 — fix "Claim not found" dead-end for freshly-created Claims (frontend only)
 
 - **Fixed a real UX bug, reported live by a user hitting it during testing:** a Claim's detail

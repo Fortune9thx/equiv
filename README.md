@@ -127,14 +127,17 @@ npm run dev
 
 Live on GenLayer Bradbury Testnet:
 
-- `ClaimFactory`: [`0x3912627184B178d6a23b15F42C252609b6f4945C`](https://explorer-bradbury.genlayer.com/address/0x3912627184B178d6a23b15F42C252609b6f4945C)
+- `ClaimFactory`: [`0xDF4AA4ddB47454899554291ba83Bc564D11536AF`](https://explorer-bradbury.genlayer.com/address/0xDF4AA4ddB47454899554291ba83Bc564D11536AF)
   (creation stake: 1 GEN, `Claim.py` source embedded per `deploy/deploy.mjs`)
 
-  Redeployed 2026-08-20 (fourth deployment) to carry the 0.1.9 fund-safety fixes (zero-stake
-  refund path, `withdraw_fees()`, `get_balance()`) onto the live contract. Prior addresses
+  Redeployed 2026-08-20 (fifth deployment) to replace a prior deployment whose *own* on-chain
+  state became unreadable (every view call failed with `"failed to get contract state: getting
+  latest accepted transaction: ... caller error"`), not a bug in this codebase — see SECURITY.md's
+  "ClaimFactory registry became unreadable" for the full account. Prior addresses
+  `0x3912627184B178d6a23b15F42C252609b6f4945C` (0.1.9 fixes, now broken/unreadable),
   `0x65880E6a4dD9561a6acC4C275958D710c391eDf2` (0.1.5 fixes),
   `0x306Cf15AB31ceD28f65d28d43179FB3aE349ABaE` (0.1.3 fixes), and
-  `0xC62245f05Abcf2f763E298641Ff2D97ED8865F30` (pre-fix) ran older source and are superseded.
+  `0xC62245f05Abcf2f763E298641Ff2D97ED8865F30` (pre-fix) ran older source and/or are unreachable.
 
 ## License
 

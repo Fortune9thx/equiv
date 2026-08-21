@@ -8,24 +8,22 @@ deployment holding real funds.
 
 ## Deployment status note
 
-`ClaimFactory` is live on Bradbury at `0x3912627184B178d6a23b15F42C252609b6f4945C`, redeployed
-2026-08-20 (fourth deployment) to carry the 0.1.9 fund-safety fixes (zero-stake refund path,
-`withdraw_fees()`, `get_balance()`) onto the live contract. Prior addresses
-`0x65880E6a4dD9561a6acC4C275958D710c391eDf2` (0.1.5 fixes),
+`ClaimFactory` is live on Bradbury at `0xDF4AA4ddB47454899554291ba83Bc564D11536AF`, redeployed
+2026-08-21 (fifth deployment). The prior deployment (`0x3912627184B178d6a23b15F42C252609b6f4945C`,
+fourth deployment, 0.1.9 fixes) is superseded not because of a source-code problem but because its
+own on-chain state became unreadable — see "ClaimFactory registry became unreadable" below for the
+full account. This redeploy carries the same 0.1.9 fund-safety fixes (zero-stake refund path,
+`withdraw_fees()`, `get_balance()`); no contract-code changes were needed, only a fresh deployment.
+Prior addresses `0x65880E6a4dD9561a6acC4C275958D710c391eDf2` (0.1.5 fixes),
 `0x306Cf15AB31ceD28f65d28d43179FB3aE349ABaE` (0.1.3 fixes), and
-`0xC62245f05Abcf2f763E298641Ff2D97ED8865F30` (pre-fix) ran older source and are now superseded
-(still reachable on-chain, but not what the frontend points at). This deploy went out during an
-active Bradbury-wide finalization backlog (see "Bradbury finalization stalls" below): the first
-broadcast attempt was rejected outright by the RPC node (`-32005 transaction gas rate limit
-exceeded: node is at capacity`, no GEN spent since nothing was ever sent), and the successful retry
-sat at `COMMITTING`/`NOT_VOTED` before reaching `ACCEPTED`. Verified post-deploy the same way as
-every prior redeploy: `genlayer-js getTransaction` confirms `statusName: ACCEPTED` and
-`txExecutionResultName: FINISHED_WITH_RETURN`; `deploy/verify-deploy.mjs` confirms
-`get_claims_count()` reads back `0` on a fresh factory; direct `get_owner()` and `get_balance()`
-reads confirm both new getters work. As before, Claim contracts are not upgradeable — every Claim
-spawned by a given `ClaimFactory` runs whatever `Claim.py` source was embedded at that factory's
-deploy time. Any future contract-level fix again requires a fresh `ClaimFactory` deployment and a
-frontend env update to adopt it live.
+`0xC62245f05Abcf2f763E298641Ff2D97ED8865F30` (pre-fix) also ran older source and are superseded.
+Verified post-deploy the same way as every prior redeploy: `genlayer-js getTransaction` confirms
+`statusName: ACCEPTED` and `txExecutionResultName: FINISHED_WITH_RETURN`; direct `get_owner()`,
+`get_balance()`, `get_claims_count()`, and `get_claims()` reads all succeed cleanly (the specific
+proof that matters this time, given what happened to the previous deployment). As before, Claim
+contracts are not upgradeable — every Claim spawned by a given `ClaimFactory` runs whatever
+`Claim.py` source was embedded at that factory's deploy time. Any future contract-level fix again
+requires a fresh `ClaimFactory` deployment and a frontend env update to adopt it live.
 
 ## Fixed — found via live manual testing, not review
 
@@ -260,6 +258,38 @@ observed operational characteristic of testnet infrastructure this project depen
 control, and a candidate to report to the GenLayer team as a possible platform-level gap
 specifically affecting the factory-deploy pattern this project (and the canonical
 `intelligent-oracle` reference) both use.
+
+### ClaimFactory registry became unreadable, likely from a long-stuck pending transaction
+
+Observed live 2026-08-21: a report that "the frontend isn't reading the on-chain registry"
+(external reviewer feedback) was investigated directly against the then-live `ClaimFactory`
+(`0x3912627184B178d6a23b15F42C252609b6f4945C`) rather than assumed to be a frontend bug. Every
+single view method on that contract — `get_owner`, `get_balance`, `get_claims_count`, `get_claims`
+— failed identically with `"execution failed: failed to get contract state: getting latest
+accepted transaction: failed to get latest accepted transactions: caller error"`; one attempt hung
+long enough to time out a 2-minute script entirely. This is not a frontend issue: the exact same
+failure reproduced from a plain Node script with no UI code involved at all, against every read
+method the contract exposes, not just one.
+
+The most likely explanation, based on what else was true of that contract at the time: its
+`withdraw_fees()` call (see "Fixed — steward review" above) had been sitting unfinalized at
+`READY_TO_FINALIZE` for many hours — by far the longest any transaction against this project's
+contracts had remained pending. The working theory is that a transaction stuck this long in a
+contract's own queue can eventually block *all* reads to that contract, not just interactions
+related to the stuck transaction itself — a more severe manifestation of the same finalization-lag
+class of issue described above, not a new, unrelated one. This is inference from correlation, not
+independently confirmed against GenLayer internals; recorded here as the best available explanation
+rather than a certainty.
+
+No amount of client-side retry or waiting can fix a contract whose own state is unreadable at the
+RPC layer, so the resolution was a fresh `ClaimFactory` deployment (fifth deployment,
+`0xDF4AA4ddB47454899554291ba83Bc564D11536AF`) rather than continuing to wait on the broken one —
+confirmed clean immediately after deploy: all four view methods above succeed on the new address.
+The two Claims and the 2 GEN in accumulated (now unwithdrawable) fees that existed against the
+broken factory are not reachable through the app anymore, the same permanent-supersession trade-off
+every prior redeploy in this project has made. Flagged as another candidate to report to the
+GenLayer team: a contract becoming completely unreadable due to one of its own pending transactions
+is a severe availability failure mode for any dApp built on this pattern, not specific to Equiv.
 
 ### Evidence-source manipulation and prompt injection
 
