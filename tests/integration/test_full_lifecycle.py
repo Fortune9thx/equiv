@@ -38,6 +38,7 @@ import time
 from pathlib import Path
 
 import pytest
+from gltest import get_contract_factory
 from gltest.assertions import tx_execution_failed
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[2] / "contracts"
@@ -49,7 +50,7 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(scope="module")
-def factory(get_contract_factory, accounts):
+def factory(accounts):
     """Deploy a fresh ClaimFactory with the real Claim.py source embedded,
     zero creation fee -- exactly as deploy/deploy.mjs does for a real
     network deployment, except free, since most tests here don't need to
@@ -113,9 +114,7 @@ def test_deploy_claim_rejects_oversized_tag(factory, accounts):
         ).transact()
 
 
-def test_unauthorized_wallet_cannot_claim_a_position_it_never_took(
-    factory, accounts, get_contract_factory
-):
+def test_unauthorized_wallet_cannot_claim_a_position_it_never_took(factory, accounts):
     """Access-control equivalent for Equiv's actual design: there is no
     owner-gated write over Claim data anywhere (deploy_claim, take_position,
     resolve, and claim_payout are all intentionally permissionless --
@@ -147,7 +146,7 @@ def test_unauthorized_wallet_cannot_claim_a_position_it_never_took(
         claim.connect(outsider).claim_payout(args=[]).transact()
 
 
-def test_precedent_citation_reads_parent_verdict_via_view(factory, accounts, get_contract_factory):
+def test_precedent_citation_reads_parent_verdict_via_view(factory, accounts):
     """End-to-end: resolve a parent Claim, then deploy a child Claim citing
     it as a precedent and confirm resolve() on the child does not revert
     when reading the parent's get_verdict() through .view() -- the only
@@ -182,7 +181,7 @@ def test_precedent_citation_reads_parent_verdict_via_view(factory, accounts, get
     assert child_claim.get_claim(args=[]).call()["parent_claims"] == [parent_address]
 
 
-def test_no_stake_on_winning_outcome_refunds_every_position(factory, accounts, get_contract_factory):
+def test_no_stake_on_winning_outcome_refunds_every_position(factory, accounts):
     """Live proof of the fund-safety fix: everyone stakes NO, the claim
     genuinely resolves YES (winning_pool == 0), and every staker gets their
     own stake back rather than a permanently-stranded zero payout. Mirrors
@@ -220,7 +219,7 @@ def test_no_stake_on_winning_outcome_refunds_every_position(factory, accounts, g
     assert position["claimed"] is True
 
 
-def test_owner_can_withdraw_accumulated_creation_fees(get_contract_factory, accounts):
+def test_owner_can_withdraw_accumulated_creation_fees(accounts):
     """Live proof of the recoverable-fee-lifecycle fix: a separate factory
     (its own instance, non-zero creation_fee) collects a real fee from a
     real deploy_claim call, and the owner's withdraw_fees() actually moves
@@ -254,7 +253,7 @@ def test_owner_can_withdraw_accumulated_creation_fees(get_contract_factory, acco
     assert balance_after == 0
 
 
-def test_non_owner_cannot_withdraw_fees(get_contract_factory, accounts):
+def test_non_owner_cannot_withdraw_fees(accounts):
     owner = accounts[0]
     outsider = accounts[1]
     fee_factory = get_contract_factory(contract_file_path=str(CLAIM_FACTORY_PATH)).deploy(

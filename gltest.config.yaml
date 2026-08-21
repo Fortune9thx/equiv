@@ -1,0 +1,6 @@
+networks:
+  default: testnet_bradbury
+  testnet_bradbury:
+    accounts:
+      - "${TEST_ACCOUNT_1_KEY}"
+      - "${TEST_ACCOUNT_2_KEY}"
